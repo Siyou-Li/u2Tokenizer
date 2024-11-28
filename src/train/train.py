@@ -9,8 +9,8 @@ import transformers
 from transformers import AutoTokenizer, LlamaForCausalLM, AutoModelForCausalLM
 from dataclasses import dataclass, field
 #from src.dataset.multi_dataset import UniDatasets, CapDataset, TextDatasets, VQADataset
-from src.dataset.ct_rate_dataset import CapDataset
-from src.dataset.amos_mm_monai_dataset import MRGMIXDatasets, VQADataset
+from src.dataset.amos_mm_monai_dataset import MRGMIXDatasets
+from src.dataset.fused_dataset import FusedDataset
 from src.model.language_model import LamedLlamaForCausalLM
 from src.train.lamed_trainer import LaMedTrainer
 import os
@@ -19,22 +19,7 @@ torch._dynamo.config.suppress_errors = False
 import wandb
 from accelerate import Accelerator
 from accelerate.utils import DistributedDataParallelKwargs
-from torch.cuda.amp import autocast
-from monai.transforms import (
-        EnsureChannelFirst,
-        Compose,
-        CropForeground,
-        Resize,
-        ScaleIntensity,
-        Lambda,
-        Flip,
-        Rotate90,
-        RandScaleIntensity,
-        ToTensor,
-        EnsureType,
-        RandShiftIntensity,
-    )
-from src.utils.utils import normalize
+
 
 kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
 accelerator = Accelerator(kwargs_handlers=[kwargs])
@@ -91,23 +76,10 @@ class ModelArguments:
 
 @dataclass
 class DataArguments:
-    data_root: str = field(default="./Data/data/", metadata={"help": "Root directory for all data."})
-
-    # caption data
-    cap_data_path: str = field(default="./Data/data/M3D_Cap_npy/M3D_Cap.json", metadata={"help": "Path to caption data."})
-
-    # VQA data
-    vqa_data_train_path: str = field(default="./Data/data/M3D-VQA/M3D_VQA_train.csv", metadata={"help": "Path to training VQA data."})
-    vqa_data_val_path: str = field(default="./Data/data/M3D-VQA/M3D_VQA_val.csv", metadata={"help": "Path to validation VQA data."})
-    vqa_data_test_path: str = field(default="./Data/data/M3D-VQA/M3D_VQA_test.csv", metadata={"help": "Path to testing VQA data."})
-
-    vqa_yn_data_train_path: str = field(default="./Data/data/M3D-VQA/M3D_VQA_yn_train.csv", metadata={"help": "Path to training VQA Yes or No data."})
-
-    # positioning & segmentation data
-    seg_data_path: str = field(default="./Data/data/M3D_Seg_npy/", metadata={"help": "Path to segmentation data."})
-    refseg_data_train_path: str = field(default="./Data/data/M3D_RefSeg_npy/M3D_RefSeg.csv", metadata={"help": "Path to refering segmentation data."})
-    refseg_data_test_path: str = field(default="./Data/data/M3D_RefSeg_npy/M3D_RefSeg_test.csv", metadata={"help": "Path to refering segmentation data."})
-
+    train_jsonl_path: str = field(default="", metadata={"help": "Path to caption data."})
+    train_base_path: str = field(default="", metadata={"help": "Path to image data."})
+    val_json_path: str = field(default="", metadata={"help": "Path to caption data."})
+    val_image_dir: str = field(default="", metadata={"help": "Path to image data."})
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -231,6 +203,10 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer,
         }
         del state_dict
         trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
+    
+    # save tokenizer
+    trainer.tokenizer.save_pretrained(output_dir)
+    
 
 
 
@@ -346,10 +322,10 @@ def main():
             trust_remote_code=True,
             dtype=torch.bfloat16
         )
-        # freeze the llama model
-        model.model.embed_tokens.requires_grad_(False)
-        model.model.layers.requires_grad_(False)
-        model.model.norm.requires_grad_(False)
+        # # freeze the llama model
+        # model.model.embed_tokens.requires_grad_(False)
+        # model.model.layers.requires_grad_(False)
+        # model.model.norm.requires_grad_(False)
         # if freeze vision tower
         if model_args.freeze_vision_tower:
             print("Freezing vision tower")
@@ -436,61 +412,11 @@ def main():
     mode = 'trilinear'
     max_length=data_args.max_length
     image_tokens_num=data_args.proj_out_num
-
-    # CT-RATE
-    # image_dir = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/Video-LLaVA/dataset/CT-RATE/dataset/train'
-    # json_path = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/Video-LLaVA/dataset/CT-RATE/dataset/radiology_text_reports/train.json'
     
-    # if model_args.tune_mm_mlp_adapter:
-    #     train_dataset = CapDataset(image_dir, json_path, model_args.input_image_size, model_args.patch_size, mode, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num)
-    # else:
-    #     train_dataset = CapDataset(image_dir, json_path, model_args.input_image_size, model_args.patch_size, mode, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num)
+    train_dataset = FusedDataset(data_args.train_base_path, data_args.train_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training")
 
-    
-    # test_image_dir = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/datasets/CT-RATE/dataset/valid'
-    # test_json_path = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/datasets/CT-RATE/dataset/radiology_text_reports/validation_reports.json'
-    # eval_dataset = CapDataset(test_image_dir, test_json_path, model_args.input_image_size, model_args.patch_size, mode, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num)
-    # data_collator = DataCollator()
-
-    # CT-RATE process
-    # image_dir = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/datasets/CT-RATE/dataset/'
-    # json_path = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/datasets/CT-RATE/dataset/radiology_text_reports/synthetic_dataset.json'
-    
-    # if model_args.tune_mm_mlp_adapter:
-    #     train_dataset = MRGMIXDatasets(image_dir + "train/", json_path, model_args.input_image_size, model_args.patch_size, mode, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training")
-    # else:
-    #     train_dataset = MRGMIXDatasets(image_dir+ "train/", json_path, model_args.input_image_size, model_args.patch_size, mode, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training")
-
-    # eval_dataset = MRGMIXDatasets(image_dir+ "valid/", json_path, model_args.input_image_size, model_args.patch_size, mode, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="validation")
-    # data_collator = DataCollator()
-
-    # MRG
-    val_image_dir = '/home/lez/Siyou/Med3DLLM/datasets/AMOS-MM/'
-    val_json_path = '/home/lez/Siyou/Med3DLLM/datasets/AMOS-MM/dataset_{}.json'
-    train_image_dir = '/home/lez/Siyou/Med3DLLM/datasets/AMOS-MM/'
-    train_json_path = '/home/lez/Siyou/Med3DLLM/datasets/AMOS-MM-Extension/dataset_{}_extension_gemma2@27b_cot.json'
-    
-    #image_transforms = Compose([ScaleIntensity(), EnsureChannelFirst(), Resize(model_args.input_image_size)])
-    if model_args.tune_mm_mlp_adapter:
-        train_dataset = MRGMIXDatasets(train_image_dir, train_json_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training")
-    else:
-        train_dataset = MRGMIXDatasets(train_image_dir, train_json_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training")
-
-    
-    eval_dataset = MRGMIXDatasets(val_image_dir, val_json_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="validation")
+    eval_dataset = MRGMIXDatasets(data_args.val_image_dir, data_args.val_json_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="validation")
     data_collator = DataCollator()
-
-    # VQA
-    # image_dir = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/datasets/AMOS-MM/'
-    # json_path = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/datasets/AMOS-MM/dataset_processed.json'
-    
-    # if model_args.tune_mm_mlp_adapter:
-    #     train_dataset = VQADataset(image_dir, json_path, model_args.input_image_size, model_args.patch_size, mode, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training")
-    # else:
-    #     train_dataset = VQADataset(image_dir, json_path, model_args.input_image_size, model_args.patch_size, mode, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training")
-    
-    # eval_dataset = VQADataset(image_dir, json_path, model_args.input_image_size, model_args.patch_size, mode, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="validation")
-    # data_collator = DataCollator()
     
     rank0_print("="*20 + " Training " + "="*20)
     trainer = LaMedTrainer(

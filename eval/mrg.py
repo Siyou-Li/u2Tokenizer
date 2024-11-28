@@ -8,7 +8,7 @@ from src.dataset.amos_mm_monai_dataset import MRGDataset
 from tqdm import tqdm
 from src.utils.utils import normalize
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 
 def find_all_linear_names(model):
     cls = torch.nn.Linear
@@ -47,7 +47,7 @@ def load_model(green_model_path, lamed_model_path, lora_weight_path=None):
     lamed_model = AutoModelForCausalLM.from_pretrained(
         lamed_model_path,
         trust_remote_code=True,
-    )
+    ).eval().half()
     if lora_weight_path:
         from peft import LoraConfig, get_peft_model
         lora_config = LoraConfig(
@@ -91,7 +91,7 @@ def inference(input_image, input_id, tokenizer, lamed_model, temperature=1.0, to
     # prompt = "<im_patch>" * 256 + input_str
 
     input_id = tokenizer(input_id, return_tensors="pt")['input_ids'].to("cuda")
-    image_pt = torch.from_numpy(input_image).to("cuda")
+    image_pt = torch.from_numpy(input_image).to("cuda").half()
 
     generation = lamed_model.generate(image_pt, input_id, max_new_tokens=512,
                                         do_sample=True, top_p=top_p, temperature=temperature)
@@ -131,14 +131,20 @@ def mrg_annotation(dataloader, categorize, green_model, tokenizer, lamed_model):
         num += 1
     lamed_model.to("cpu")    
     torch.cuda.empty_cache()
-    mean_green_score = green_score(pred_report, gt_report, categorize, green_model, image_paths)
+    try:
+        mean_green_score = green_score(pred_report, gt_report, categorize, green_model, image_paths)
+    except Exception as e:
+        try:
+            mean_green_score = green_score(pred_report, gt_report, categorize, green_model, image_paths)
+        except Exception as e:
+            mean_green_score = green_score(pred_report, gt_report, categorize, green_model, image_paths)
     lamed_model.to("cuda")
     return mean_green_score
     
 def woker(green_model, tokenizer, lamed_model, categorize):
     
-    image_dir = '/home/lez/Siyou/Med3DLLM/datasets/AMOS-MM/'
-    json_path = '/home/lez/Siyou/Med3DLLM/datasets/AMOS-MM/dataset_{}.json'
+    image_dir = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/Med3D_LLM/datasets/AMOS-MM/'
+    json_path = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/Med3D_LLM/datasets/AMOS-MM/dataset_{}.json'
     dataset = MRGDataset(
         image_dir, json_path.format(categorize[1]), tokenizer, 512, \
         categorize=categorize, data_type="validation"
@@ -153,8 +159,8 @@ if __name__ == "__main__":
     categorizes = [["findings","chest"], ["findings","abdomen"], ["findings","pelvis"]]
     devices = [0, 1, 2]
     threads = []
-    green_model_path="/home/lez/Siyou/Med3DLLM/pretrained_models/GREEN-RadLlama2-7b"
-    lamed_model_path = "/home/lez/Siyou/Med3DLLM/checkpoint/Med3dLLM-1112-MRG-CoT/checkpoint-13179"
+    green_model_path="/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/Med3D_LLM/pretrained_models/GREEN-RadLlama2-7b"
+    lamed_model_path = "/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/Med3D_LLM/checkpoint/Med3dLLM_1123_mrg_qwen2.5@32b_cot_bs24_acc1_ep32_lr2e5_ws4/checkpoint-23456"
     lora_weight_path = None
     green_model, tokenizer, lamed_model = load_model(green_model_path, lamed_model_path, lora_weight_path)
     print(lamed_model_path.split("/")[-2])

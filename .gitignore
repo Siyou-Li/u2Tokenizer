@@ -1,4 +1,7 @@
 **/__pycache__
+Bench
 wandb
 checkpoint
 datasets
+submit
+pretrained_models
