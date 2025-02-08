@@ -4,11 +4,19 @@ import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
-from src.dataset.amos_mm_monai_dataset import MRGDataset
+from src.dataset.fused_dataset import FusedDataset
 from tqdm import tqdm
 from src.utils.utils import normalize
-
-os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+from transformers import AutoModelForCausalLM, AutoTokenizer
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+device = "cuda"
+check_model_name = "/import/c4dm-04/siyoul/Med3DLLM/pretrained_models/Qwen2.5-1.5B-Instruct"
+check_model = AutoModelForCausalLM.from_pretrained(
+    check_model_name,
+    torch_dtype="auto",
+    device_map="auto"
+).eval()
+check_tokenizer = AutoTokenizer.from_pretrained(check_model_name)
 
 def find_all_linear_names(model):
     cls = torch.nn.Linear
@@ -30,10 +38,10 @@ def load_model(green_model_path, lamed_model_path, lora_weight_path=None):
     #green_model = green_model.to("cuda:{}".format(device))
     tokenizer = AutoTokenizer.from_pretrained(
         lamed_model_path,
-        model_max_length=512,
-        padding_side="left",
+        model_max_length=768,
+        padding_side="right",
         use_fast=False,
-        pad_token="<unk>",
+        pad_token="<|endoftext|>",
         trust_remote_code=True
     )
     # special_token = {"additional_special_tokens": ["<im_patch>", "<bx_start>", "<bx_end>"]}
@@ -47,7 +55,7 @@ def load_model(green_model_path, lamed_model_path, lora_weight_path=None):
     lamed_model = AutoModelForCausalLM.from_pretrained(
         lamed_model_path,
         trust_remote_code=True,
-    ).eval().half()
+    ).eval()
     if lora_weight_path:
         from peft import LoraConfig, get_peft_model
         lora_config = LoraConfig(
@@ -62,14 +70,14 @@ def load_model(green_model_path, lamed_model_path, lora_weight_path=None):
         lamed_model = get_peft_model(lamed_model, lora_config)
         # lamed_model.print_trainable_parameters()
         print("Load weights with LoRA")
-        state_dict = torch.load(lora_weight_path, map_location="cuda")
+        state_dict = torch.load(lora_weight_path, map_location=device)
         lamed_model.load_state_dict(state_dict, strict=True)
         print("Merge weights with LoRA")
         lamed_model = lamed_model.merge_and_unload()
         
     
     with torch.no_grad():
-        lamed_model = lamed_model.to("cuda")
+        lamed_model = lamed_model.to(device)
     return green_model, tokenizer, lamed_model
 
 def green_score(pred_report, gt_report, categorize, green_model, image_paths):
@@ -83,17 +91,19 @@ def green_score(pred_report, gt_report, categorize, green_model, image_paths):
     print("{} - Average GREEN Score: {}".format(categorize[1],mean))
     return mean
 
-def inference(input_image, input_id, tokenizer, lamed_model, temperature=1.0, top_p=0.9):
+def inference(image, question, tokenizer, lamed_model, temperature=1.0, top_p=0.9):
 
     # ## filter out special chars
     # input_str = bleach.clean(input_str)
     # # Model Inference
     # prompt = "<im_patch>" * 256 + input_str
 
-    input_id = tokenizer(input_id, return_tensors="pt")['input_ids'].to("cuda")
-    image_pt = torch.from_numpy(input_image).to("cuda").half()
+    input_id = tokenizer(
+        question, add_special_tokens=False, max_length=768, truncation=True, padding="max_length", return_tensors="pt", padding_side="right",
+    )['input_ids'].to(device)
+    # image_pt = torch.from_numpy(input_image).to(device)
 
-    generation = lamed_model.generate(image_pt, input_id, max_new_tokens=512,
+    generation = lamed_model.generate(image.to(device), input_id, seg_enable=False, max_new_tokens=768,
                                         do_sample=True, top_p=top_p, temperature=temperature)
 
     output_str = tokenizer.batch_decode(generation, skip_special_tokens=True)[0]
@@ -104,6 +114,39 @@ def collate_fn(batch):
     if not batch:
         return None
     return torch.utils.data.dataloader.default_collate(batch)
+
+def check_chinese_and_quality(question, answer):
+    for ch in answer:
+        if u'\u4e00' <= ch <= u'\u9fff':
+            return False
+    if len(answer) < 20:
+        return False
+    return True
+    example = "Quention: Can you provide a diagnosis based on the fingings in chest in this image? Answer: Both sides of the chest are symmetrical. Scattered point-like translucence are seen in both lungs, and a few patchy high-density foci are seen in the low lobe of left lung. No other abnormal are seen in the lungs. The trachea and bronchi are unobstructed. The mediastinum and trachea are centered, and multiple slightly enlarged lymph nodes with higher density are seen in the mediastinum and bilateral pulmonary hila. The pleura is normal. The morphology and size of the heart and great vessels are normal, with a small amount of fluid in the pericardium. A high-density shadow is seen in the upper part of the esophagus. No obvious abnormal enhancement is seen in the chest."
+    messages = [
+        {"role": "system", "content": f"You are the Radiation LLM answer checker, please identify invalid answers (e.g. duplicate/meaningless/unrelated output) This is an example: {example}.if answers are checked by Yes otherwise No, do not output any other characters other than that"},
+        {"role": "user", "content": f"Quention: {question} Answer: {answer}"}
+    ]
+    text = check_tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True
+    )
+    model_inputs = check_tokenizer([text], return_tensors="pt").to(check_model.device)
+
+    generated_ids = check_model.generate(
+        **model_inputs,
+        max_new_tokens=10,
+    )
+    generated_ids = [
+        output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
+    ]
+
+    response = check_tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+    if "Yes" in response:
+        return True
+    else:
+        return False
 
 def mrg_annotation(dataloader, categorize, green_model, tokenizer, lamed_model):
     
@@ -117,19 +160,27 @@ def mrg_annotation(dataloader, categorize, green_model, tokenizer, lamed_model):
         #print(batch)
         #try:
         gt_report.append(batch["answer"][0])
-        input_image = batch["image"].numpy()
+        image = batch["image"]
         #print(input_image.shape)
-        input_id = batch["question"][0]
+        question = batch["question"][0]
         image_path = batch["image_path"][0]
         image_paths.append(image_path)
-        pred, _ = inference(input_image, input_id, tokenizer, lamed_model)
+        flag = False
+        while flag == False:
+            pred, _ = inference(image, question, tokenizer, lamed_model)
+            flag = check_chinese_and_quality(question, pred)
+            print(flag, pred)
+        print(flag, pred)
+        # pred, _ = inference(image, question, tokenizer, lamed_model)
         pred_report.append(pred)
             # if num == 10:
             #     break
         # except Exception as e:
         #     print(e)
         num += 1
-    lamed_model.to("cpu")    
+        if num == 40:
+            break
+    lamed_model.to(device)    
     torch.cuda.empty_cache()
     try:
         mean_green_score = green_score(pred_report, gt_report, categorize, green_model, image_paths)
@@ -138,16 +189,20 @@ def mrg_annotation(dataloader, categorize, green_model, tokenizer, lamed_model):
             mean_green_score = green_score(pred_report, gt_report, categorize, green_model, image_paths)
         except Exception as e:
             mean_green_score = green_score(pred_report, gt_report, categorize, green_model, image_paths)
-    lamed_model.to("cuda")
+    lamed_model.to(device)
     return mean_green_score
     
 def woker(green_model, tokenizer, lamed_model, categorize):
     
-    image_dir = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/Med3D_LLM/datasets/AMOS-MM/'
-    json_path = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/Med3D_LLM/datasets/AMOS-MM/dataset_{}.json'
-    dataset = MRGDataset(
-        image_dir, json_path.format(categorize[1]), tokenizer, 512, \
-        categorize=categorize, data_type="validation"
+    val_base_path = '/import/c4dm-04/siyoul/Med3DLLM/datasets'
+    val_jsonl_path = '/import/c4dm-04/siyoul/Med3DLLM/datasets/Fused_Dataset/val/amos_mm_findings.jsonl'
+    dataset = FusedDataset(
+        val_base_path, 
+        val_jsonl_path, 
+        tokenizer, 
+        max_length=2048, 
+        image_tokens_num=256, 
+        data_type="valuation"
         )
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
     mean_green_score = mrg_annotation(dataloader, categorize, green_model, tokenizer, lamed_model)
@@ -157,10 +212,8 @@ def woker(green_model, tokenizer, lamed_model, categorize):
 
 if __name__ == "__main__":
     categorizes = [["findings","chest"], ["findings","abdomen"], ["findings","pelvis"]]
-    devices = [0, 1, 2]
-    threads = []
-    green_model_path="/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/Med3D_LLM/pretrained_models/GREEN-RadLlama2-7b"
-    lamed_model_path = "/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/Med3D_LLM/checkpoint/Med3dLLM_1123_mrg_qwen2.5@32b_cot_bs24_acc1_ep32_lr2e5_ws4/checkpoint-23456"
+    green_model_path="/import/c4dm-04/siyoul/Med3DLLM/pretrained_models/GREEN-RadLlama2-7b"
+    lamed_model_path = "/import/c4dm-04/siyoul/Med3DLLM/checkpoint/Med3dLLM_0205_mrg_phi2@bs2_acc1_ep16_lr2e5_ws2_fused/checkpoint-58000"
     lora_weight_path = None
     green_model, tokenizer, lamed_model = load_model(green_model_path, lamed_model_path, lora_weight_path)
     print(lamed_model_path.split("/")[-2])

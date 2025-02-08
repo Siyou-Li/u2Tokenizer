@@ -9,9 +9,9 @@ import transformers
 from transformers import AutoTokenizer, LlamaForCausalLM, AutoModelForCausalLM
 from dataclasses import dataclass, field
 #from src.dataset.multi_dataset import UniDatasets, CapDataset, TextDatasets, VQADataset
-from src.dataset.amos_mm_monai_dataset import MRGMIXDatasets
+#from src.dataset.amos_mm_monai_dataset import MRGMIXDatasets
 from src.dataset.fused_dataset import FusedDataset
-from src.model.language_model import LamedLlamaForCausalLM
+from src.model.language_model import LamedLlamaForCausalLM, LamedPhiForCausalLM
 from src.train.lamed_trainer import LaMedTrainer
 import os
 import torch._dynamo
@@ -78,8 +78,8 @@ class ModelArguments:
 class DataArguments:
     train_jsonl_path: str = field(default="", metadata={"help": "Path to caption data."})
     train_base_path: str = field(default="", metadata={"help": "Path to image data."})
-    val_json_path: str = field(default="", metadata={"help": "Path to caption data."})
-    val_image_dir: str = field(default="", metadata={"help": "Path to image data."})
+    val_jsonl_path: str = field(default="", metadata={"help": "Path to caption data."})
+    val_base_path: str = field(default="", metadata={"help": "Path to image data."})
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -266,7 +266,6 @@ class DataCollator:
                 labels=labels,
                 attention_mask=attention_mask,
             )
-
         return return_dict
 
 
@@ -281,17 +280,22 @@ def main():
 
     rank0_print("="*20 + " Tokenizer preparation " + "="*20)
     # Load tokenizer from the given path with specified configurations
+    pad_token = "<unk>"
+    if 'phi' in model_args.model_type:
+        pad_token = "<|endoftext|>"
+
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
         model_max_length=training_args.model_max_length,
-        padding_side="left",
-        pad_token="<unk>",
+        padding_side="right",
+        pad_token=pad_token,
         use_fast=False,
+        trust_remote_code=True
     )
 
     # Define and add special tokens
-    # special_token = {"additional_special_tokens": ["<im_patch>", "<bx_start>", "<bx_end>"]}
+    # special_token = {"additional_special_tokens": ["<|coord_9|>", "<im_patch>", "<bx_start>", "<bx_end>"]}
     # tokenizer.add_special_tokens(
     #     special_token
     # )
@@ -302,9 +306,8 @@ def main():
 
     # Convert special tokens to token IDs and set related arguments
     model_args.img_token_id = tokenizer.convert_tokens_to_ids("<im_patch>")
-    model_args.seg_token_id = tokenizer.convert_tokens_to_ids("[SEG]")
     model_args.vocab_size = len(tokenizer)
-    rank0_print("seg_token_id: ", model_args.seg_token_id)
+    print("img_token_id: ", model_args.img_token_id)
     rank0_print("vocab_size: ", model_args.vocab_size)
 
     rank0_print("="*20 + " Model preparation " + "="*20)
@@ -313,7 +316,7 @@ def main():
         tokenizer = AutoTokenizer.from_pretrained(
             model_args.checkpoint_path,
             model_max_length=training_args.model_max_length,
-            padding_side="left",
+            padding_side="right",
             use_fast=False,
             trust_remote_code=True
         )
@@ -336,25 +339,39 @@ def main():
     else:
         if model_args.vision_tower is not None:
             if 'llama' in model_args.model_type:
+                print("Base model: Llama")
                 model = LamedLlamaForCausalLM.from_pretrained(
                     model_args.model_name_or_path,
-                    cache_dir=training_args.cache_dir
+                    cache_dir=training_args.cache_dir,
+                    trust_remote_code=True
+                )
+            elif 'phi' in model_args.model_type:
+                print("Base model: Phi")
+                model = LamedPhiForCausalLM.from_pretrained(
+                    model_args.model_name_or_path,
+                    cache_dir=training_args.cache_dir,
+                    trust_remote_code=True
                 )
             else:
                 raise ValueError(f"Unknown Model Type {model_args.model_type}")
         else:
-            model = LlamaForCausalLM.from_pretrained(
+            model = AutoModelForCausalLM.from_pretrained(
                 model_args.model_name_or_path,
-                cache_dir=training_args.cache_dir
+                cache_dir=training_args.cache_dir,
+                trust_remote_code=True,
+                dtype=torch.bfloat16
             )
 
-        model.config.seg_token_id = model_args.seg_token_id
         model.config.use_cache = False
         model.config.image_size = model_args.image_size
 
         if model_args.freeze_backbone:
+            # freeze half of the model
             model.model.requires_grad_(False)
-
+            model.model.embed_tokens.requires_grad_(True)
+            for layer in model.model.layers[:-16]:
+                layer.requires_grad_(True)
+            
         model.enable_input_require_grads()
         if training_args.gradient_checkpointing:
             model.gradient_checkpointing_enable()
@@ -371,7 +388,7 @@ def main():
             for p in model.get_model().mm_projector.parameters():
                 p.requires_grad = True
 
-        model_args.num_new_tokens = 4
+        model_args.num_new_tokens = 5
         model.initialize_vision_tokenizer(model_args, tokenizer)
 
     if model_args.pretrain_mllm:
@@ -414,8 +431,7 @@ def main():
     image_tokens_num=data_args.proj_out_num
     
     train_dataset = FusedDataset(data_args.train_base_path, data_args.train_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training")
-
-    eval_dataset = MRGMIXDatasets(data_args.val_image_dir, data_args.val_json_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="validation")
+    eval_dataset = FusedDataset(data_args.val_base_path, data_args.val_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="valuation")
     data_collator = DataCollator()
     
     rank0_print("="*20 + " Training " + "="*20)

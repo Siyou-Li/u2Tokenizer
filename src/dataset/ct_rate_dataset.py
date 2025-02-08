@@ -3,7 +3,7 @@ import json
 import torch
 from torch.utils.data import Dataset, DataLoader
 import random
-from .prompt_templates import Caption_templates
+from ..utils.prompt_templates import Caption_templates
 from src.utils.NIfTI_processor import NIfTIProcessor
 
 class CapDataset(Dataset):

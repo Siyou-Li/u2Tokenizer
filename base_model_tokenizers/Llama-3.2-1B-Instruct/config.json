@@ -1,0 +1,65 @@
+{
+  "architectures": [
+    "LamedLlamaForCausalLM"
+  ],
+  "auto_map": {
+    "AutoConfig": "configuration_m3d_lamed.LamedConfig",
+    "AutoModelForCausalLM": "modeling_m3d_lamed.LamedLlamaForCausalLM"
+  },
+  "mm_projector_type": "spp",
+  "model_type": "lamed_llama",
+  "patch_size": [
+    4,
+    16,
+    16
+  ],
+  "proj_layer_num": 2,
+  "proj_layer_type": "mlp",
+  "proj_pooling_size": 2,
+  "proj_pooling_type": "spatial",
+  "seg_token_id": 32003,
+  "segmentation_module": null,
+  "vision_select_feature": "patch",
+  "vision_select_layer": -1,
+  "vision_tower": "vit3d",
+  "image_channel": 1,
+  "image_size": [
+    32,
+    256,
+    256
+  ],
+  "mm_hidden_size": 768,
+  "attention_bias": false,
+  "attention_dropout": 0.0,
+  "bos_token_id": 128000,
+  "eos_token_id": [
+    128001,
+    128008,
+    128009
+  ],
+  "head_dim": 64,
+  "hidden_act": "silu",
+  "hidden_size": 2048,
+  "initializer_range": 0.02,
+  "intermediate_size": 8192,
+  "max_position_embeddings": 131072,
+  "mlp_bias": false,
+  "num_attention_heads": 32,
+  "num_hidden_layers": 16,
+  "num_key_value_heads": 8,
+  "pretraining_tp": 1,
+  "rms_norm_eps": 1e-05,
+  "rope_scaling": {
+    "factor": 32.0,
+    "high_freq_factor": 4.0,
+    "low_freq_factor": 1.0,
+    "original_max_position_embeddings": 8192,
+    "rope_type": "llama3"
+  },
+  "rope_theta": 500000.0,
+  "tie_word_embeddings": true,
+  "torch_dtype": "bfloat16",
+  "transformers_version": "4.45.0.dev0",
+  "use_cache": true,
+  "vocab_size": 128256
+}

@@ -2,18 +2,25 @@
 
 # run "accelerate config" first!
 export WANDB_API_KEY=00da6485031077ad0ca743ecf911ade54986ffaa
-export PYTHONPATH=/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D
-CUDA_VISIBLE_DEVICES=0,1 accelerate launch --main_process_port 29501 \
-    ./MedLLM/src/train/train.py \
+export PROJECT_PATH=/data/siyou/Med3dLLM
+export CHECKPOINT_NAME=Med3dLLM_0205_mrg_phi2@bs2_acc1_ep16_lr2e5_ws2_fused
+
+CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch --config_file $PROJECT_PATH/config/accelerate_config.yaml\
+    --main_process_port 29501 \
+    src/train/train.py \
     --version v0 \
-    --model_name_or_path /pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/pretrained_model/Asclepius-Llama3-8B \
-    --model_type llama2 \
+    --model_name_or_path $PROJECT_PATH/pretrained_models/RadPhi-2 \
+    --model_type phi \
     --lora_enable True \
     --vision_tower vit3d \
-    --pretrain_vision_model /pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/pretrained_model/M3D-CLIP/pretrained_ViT.bin \
+    --pretrain_vision_model $PROJECT_PATH/pretrained_models/M3D-CLIP/pretrained_ViT.bin \
     --tune_mm_mlp_adapter False \
     --bf16 True \
-    --output_dir ./MedLLM/output/LaMed-Asclepius8b-1001-mrg-lora \
+    --train_base_path $PROJECT_PATH/datasets \
+    --train_jsonl_path $PROJECT_PATH/datasets/Fused_Dataset/train/amos_mm_rewrite.jsonl \
+    --val_base_path $PROJECT_PATH/datasets \
+    --val_jsonl_path $PROJECT_PATH/datasets/Fused_Dataset/val/amos_mm_findings.jsonl \
+    --output_dir $PROJECT_PATH/checkpoint/$CHECKPOINT_NAME \
     --num_train_epochs 8 \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 1 \
@@ -22,20 +29,19 @@ CUDA_VISIBLE_DEVICES=0,1 accelerate launch --main_process_port 29501 \
     --eval_accumulation_steps 1 \
     --eval_steps 0.95 \
     --save_strategy "steps" \
-    --save_steps 3000 \
-    --save_total_limit 1 \
-    --learning_rate 1e-5 \
+    --save_steps 2000 \
+    --save_total_limit 5 \
+    --learning_rate 2e-5 \
     --weight_decay 0. \
     --warmup_ratio 0.1 \
     --lr_scheduler_type "cosine" \
     --logging_steps 0.001 \
-    --gradient_checkpointing False \
-    --dataloader_pin_memory True\
-    --dataloader_num_workers 4 \
-    --report_to wandb \
+    --gradient_checkpointing True \
+    --dataloader_pin_memory False\
+    --dataloader_num_workers 8 \
+    --report_to tensorboard \
     --wandb_project_name AMOS-MM \
-    --wandb_run_name Asclepius8b-1001-mrg-lora \
+   --wandb_run_name $CHECKPOINT_NAME \
     --freeze_vision_tower False \
-    --freeze_backbone True \
-    --model_max_length 512 \
-    #--checkpoint_path /pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/LaMed/output/example \
+    --freeze_backbone False \
+    --model_max_length 768 \

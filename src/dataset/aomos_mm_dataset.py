@@ -10,7 +10,7 @@ import torch
 import numpy as np
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
 import random
-from .prompt_templates import Caption_templates
+from ..utils.prompt_templates import Caption_templates
 from src.utils.NIfTI_processor import NIfTIProcessor
 from src.dataset.ct_rate_dataset import CapDataset
 

@@ -1,14 +1,12 @@
-from green_score import GREEN
 from transformers import AutoTokenizer, BitsAndBytesConfig, AutoModelForCausalLM
 import os
 import numpy as np
 import torch
-import bleach
 from torch.utils.data import Dataset, DataLoader
-from MedLLM.src.dataset.aomos_mm_dataset import MRGDataset, VQADataset
+from src.dataset.fused_dataset import FusedDataset
 from tqdm import tqdm
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 def find_all_linear_names(model):
     cls = torch.nn.Linear
     lora_module_names = set()
@@ -118,23 +116,24 @@ def vqa_annotation(dataloader, tokenizer, lamed_model):
     
 def woker(tokenizer, lamed_model):
     
-    image_dir = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/datasets/AMOS-MM/'
-    json_path = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/datasets/AMOS-MM/dataset_processed.json'
-    output_size = (32, 256, 256)
-    patch_size = (4, 16, 16)
-    mode = 'trilinear'
-
-    dataset = VQADataset(
-        image_dir, json_path, output_size, patch_size, mode, tokenizer, 1024, data_type="validation"
+    val_base_path = '/import/c4dm-04/siyoul/Med3DLLM/datasets'
+    val_jsonl_path = '/import/c4dm-04/siyoul/Med3DLLM/datasets/Fused_Dataset/val/amos_mm_qa.jsonl'
+    dataset = FusedDataset(
+        val_base_path, 
+        val_jsonl_path, 
+        tokenizer, 
+        max_length=2048, 
+        image_tokens_num=256, 
+        data_type="valuation"
         )
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
     accuracy = vqa_annotation(dataloader, tokenizer, lamed_model)
     return accuracy
 
 if __name__ == "__main__":
-    lamed_model_path = "/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/LaMed/output/v2/vqa/checkpoint-18080"
-    lora_weight_path = "/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/LaMed/output/v2/vqa/model_with_lora.bin"
-    tokenizer, lamed_model = load_model(lamed_model_path, lora_weight_path)
+    #green_model_path="/import/c4dm-04/siyoul/Med3DLLM/pretrained_models/GREEN-RadLlama2-7b"
+    lamed_model_path = "/import/c4dm-04/siyoul/Med3DLLM/checkpoint/Med3dLLM_0113_mrg_llama3.2@1b_bs8_acc1_ep16_lr2e5_ws4_fused/checkpoint-218000"
+    tokenizer, lamed_model = load_model(lamed_model_path)
     accuracy = woker(tokenizer, lamed_model)
     print("Checkpoint: ", lamed_model_path.split("/")[-2])
     print("Accuracy: ", accuracy)

@@ -55,30 +55,24 @@ def calculate_iou(box1, box2):
     return iou
 
 def normalize(ct_tensor):
-    # ct_tensor 복사 및 평탄화
     ct_numpy = ct_tensor.numpy()
     ct_voxel_numpy = ct_numpy.copy().flatten()
     
-    # 모든 데이터에 대해 평균 계산
     thred = np.mean(ct_voxel_numpy)
     voxel_filtered = ct_voxel_numpy[ct_voxel_numpy > thred]
     
-    # 전경 데이터에 대해 상한 및 하한 계산
     upper_bound = np.percentile(voxel_filtered, 99.95)
     lower_bound = np.percentile(voxel_filtered, 00.05)
 
     mean = np.mean(voxel_filtered)
     std  = np.std(voxel_filtered)
     
-    # 각 환자의 CT 스캔에 따라 변환
     ct_numpy = np.clip(ct_numpy, lower_bound, upper_bound)
     ct_numpy = (ct_numpy - mean) / max(std, 1e-8)
     
-    # min-max 정규화
     ct_numpy = ct_numpy - np.min(ct_numpy)
     ct_numpy = ct_numpy / max(np.max(ct_numpy), 1e-8)
     
-    # 채널 차원 추가 및 permute
     ct_numpy = np.expand_dims(ct_numpy, axis=0)
     ct_numpy = np.transpose(ct_numpy, (0, 3, 1, 2))
     

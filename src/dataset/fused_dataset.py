@@ -27,7 +27,7 @@ class FusedDataset(Dataset, Randomizable):
         self.annotations = self.load_annotations(os.path.join(base_path, jsonl_path))
         self.set_random_state(seed=get_seed())
         self._seed = 0  # transform synchronization seed
-        #self.loader = LoadImage(NibabelReader, image_only=True, ensure_channel_first=False)
+        # self.loader = LoadImage(NibabelReader, image_only=True, ensure_channel_first=False)
         self.train_transforms = train_transforms
         self.val_transforms = val_transforms
         if self.data_type == "training" or self.data_type == "train":
@@ -82,20 +82,31 @@ class FusedDataset(Dataset, Randomizable):
     def __getitem__(self, idx):
         annotation = self.annotations[idx]
         image_name = annotation['image']
-        dataset_name = annotation['dataset']
+        #dataset_name = annotation['dataset']
         prompt_question = annotation["question"]
-        image_path = os.path.join(self.base_path, dataset_name, image_name)
+        image_path = os.path.join(self.base_path, image_name)
         if not os.path.exists(image_path):
             print(f"Image file not found: {image_path}")
             return None
-        image = self.image_transforms(image_path)
+        try:
+            image = self.image_transforms(image_path)
+        except Exception as e:
+            if idx == self.__len__()-1:
+                idx = 0
+            return self.__getitem__(random.randint(0, self.__len__()-1))
 
         answer = annotation["answer"]
-        question = self.image_tokens + prompt_question
-
+        few_shot_prompt = \
+            "Here are some answer examples: \
+                        1. The liver is normal in size and shape with regular surface. The liver parenchyma density is uniform, and the common bile duct and intrahepatic bile duct are not dilated. The spleen is normal in size and shape with no abnormal density in the parenchyma. The position, shape, and density of the pancreas are normal, with no dilation of the pancreatic duct. The gallbladder is not enlarged, and the wall is not thickened. Both kidneys are normal in size and shape, while multiple cystic low-density lesions are observed with no obvious enhancement. No obvious enlarged lymph nodes are seen in the posterior peritoneum. No obvious abnormal enhancing foci is seen in the upper and lower abdomen.\
+                        2. A nodular high-density focus is seen in the right lobe of the liver, and no abnormal density is found in the remaining liver parenchyma. The intrahepatic duct system is not obviously dilated. The gallbladder is not enlarged with uniform density enhancement inside, while a focal high-density shadow is seen near the neck of the gallbladder. The surface of the pancreas is rough, with still uniform density and clear adjacent fat intervals. The spleen is enlarged. Multiple enlarged lymph nodes are found in the abdominal cavity and retroperitoneum.\
+                        3. Bilateral chest are symmetrical. A few patchy high-density shadows with blurred edges are observed in the right lung upper lobe and both lung lower lobes, and a few consolidations are visible in the right lung lower lobe. No narrowing or obstruction of the trachea and bronchus can be seen. Esophageal dilation is observed with mixed low-density shadows inside. No obvious enlarged lymph nodes is seen in the mediastinum or bilateral pulmonary hila. No significant abnormalities are observed in the heart or major blood vessels. No abnormal enhanced lesions are observed in the enhanced scan.\
+                        "
+        question = "<|user|>\n" + self.image_tokens + prompt_question + "</s>\n<|assistant|>\n"
+        
         # question = self.image_tokens + " " + str(self.categorize[1]) + ":"
         text_tensor = self.tokenizer(
-            question + ' ' + answer, max_length=self.max_length, truncation=True, padding="max_length", return_tensors="pt"
+            question + answer, add_special_tokens=False, max_length=self.max_length, truncation=True, padding="max_length", return_tensors="pt", padding_side="right"
         )
 
         input_id = text_tensor["input_ids"][0]
@@ -106,7 +117,7 @@ class FusedDataset(Dataset, Randomizable):
             input_id[valid_len] = self.tokenizer.eos_token_id
 
         question_tensor = self.tokenizer(
-            question, max_length=self.max_length, truncation=True, padding="max_length", return_tensors="pt"
+            question, add_special_tokens=False, max_length=self.max_length, truncation=True, padding="max_length", return_tensors="pt", padding_side="right"
         )
 
         question_len = torch.sum(question_tensor["attention_mask"][0])

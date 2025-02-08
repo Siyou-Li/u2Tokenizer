@@ -1,0 +1,5 @@
+{
+    "project_path": "/import/c4dm-04/siyoul/Med3DLLM",
+    "ollama_model": "qwen2.5:32b",
+    "vllm_model": "Qwen/Qwen2.5-32B-Instruct-AWQ"
+}

@@ -13,7 +13,7 @@ from monai.data import set_track_meta
 
 from ..utils.utils import mask2box
 from .dataset_info import dataset_info
-from .prompt_templates import Caption_templates, PosREC_templates, PosREG_templates, Seg_templates
+from ..utils.prompt_templates import Caption_templates, PosREC_templates, PosREG_templates, Seg_templates
 from .term_dictionary import term_dict
 
 

@@ -6,7 +6,6 @@ import torch.nn as nn
 from .multimodal_encoder.builder import build_vision_tower
 from .multimodal_projector.builder import build_mm_projector
 from .segmentation_module.builder import build_segmentation_module
-from .unet3d_header.unet3d_header import Conv3DHead
 from src.model.loss import BCELoss, BinaryDiceLoss
 
 
@@ -32,7 +31,6 @@ class LamedMetaModel:
                 nn.Linear(config.hidden_size, config.mm_hidden_size),
                 nn.Dropout(0.1),
             )
-
             self.dice_loss = BinaryDiceLoss()
             self.bce_loss = BCELoss()
 
