@@ -1,5 +1,13 @@
 {
-    "project_path": "/import/c4dm-04/siyoul/Med3DLLM",
     "ollama_model": "qwen2.5:32b",
-    "vllm_model": "Qwen/Qwen2.5-32B-Instruct-AWQ"
+    "openai_server": {
+        "base_url": "https://api.siliconflow.cn/v1",
+        "api_key": "sk-njnlfiszqbrbdmffearogkutycgnhteqxjltsbzhglejljzo",
+        "model_name": "Qwen/Qwen2.5-32B-Instruct"
+    },
+    "amos_mm_dataset": {
+        "origin_data_file": "datasets/AMOS-MM/dataset.json",
+        "rewrite_output_file": "output/amos_mm_rewrite.jsonl",
+        "qa_output_file": "output/amos_mm_qa.jsonl"
+    }
 }

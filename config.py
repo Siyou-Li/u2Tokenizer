@@ -12,3 +12,5 @@ import os
 """
 f = open("config/project.json", encoding='utf-8')
 config = json.load(f)
+
+config["project_path"] = os.environ["PROJECT_DIR"]
