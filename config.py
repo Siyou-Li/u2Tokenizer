@@ -6,6 +6,7 @@
 
 import json
 import os
+import pathlib
 
 """
 读取 json 配置文件。
@@ -13,4 +14,4 @@ import os
 f = open("config/project.json", encoding='utf-8')
 config = json.load(f)
 
-config["project_path"] = os.environ["PROJECT_DIR"]
+config["project_path"] = str(pathlib.Path(__file__).parent.parent)
