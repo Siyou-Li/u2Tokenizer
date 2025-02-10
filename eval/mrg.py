@@ -119,7 +119,7 @@ def check_chinese_and_quality(question, answer):
     for ch in answer:
         if u'\u4e00' <= ch <= u'\u9fff':
             return False
-    if len(answer) < 20:
+    if len(answer.replace(" ","")) < 20:
         return False
     return True
     example = "Quention: Can you provide a diagnosis based on the fingings in chest in this image? Answer: Both sides of the chest are symmetrical. Scattered point-like translucence are seen in both lungs, and a few patchy high-density foci are seen in the low lobe of left lung. No other abnormal are seen in the lungs. The trachea and bronchi are unobstructed. The mediastinum and trachea are centered, and multiple slightly enlarged lymph nodes with higher density are seen in the mediastinum and bilateral pulmonary hila. The pleura is normal. The morphology and size of the heart and great vessels are normal, with a small amount of fluid in the pericardium. A high-density shadow is seen in the upper part of the esophagus. No obvious abnormal enhancement is seen in the chest."
@@ -168,8 +168,9 @@ def mrg_annotation(dataloader, categorize, green_model, tokenizer, lamed_model):
         flag = False
         while flag == False:
             pred, _ = inference(image, question, tokenizer, lamed_model)
+            pred = pred.strip()
             flag = check_chinese_and_quality(question, pred)
-            print(flag, pred)
+            # print(flag, pred)
         print(flag, pred)
         # pred, _ = inference(image, question, tokenizer, lamed_model)
         pred_report.append(pred)
@@ -178,8 +179,8 @@ def mrg_annotation(dataloader, categorize, green_model, tokenizer, lamed_model):
         # except Exception as e:
         #     print(e)
         num += 1
-        if num == 40:
-            break
+        # if num == 40:
+        #     break
     lamed_model.to(device)    
     torch.cuda.empty_cache()
     try:
@@ -213,7 +214,7 @@ def woker(green_model, tokenizer, lamed_model, categorize):
 if __name__ == "__main__":
     categorizes = [["findings","chest"], ["findings","abdomen"], ["findings","pelvis"]]
     green_model_path="/import/c4dm-04/siyoul/Med3DLLM/pretrained_models/GREEN-RadLlama2-7b"
-    lamed_model_path = "/import/c4dm-04/siyoul/Med3DLLM/checkpoint/Med3dLLM_0205_mrg_phi2@bs2_acc1_ep16_lr2e5_ws2_fused/checkpoint-58000"
+    lamed_model_path = "/import/c4dm-04/siyoul/Med3DLLM/checkpoint/Med3dLLM_0207_mrg_phi2@bs2_acc1_ep16_lr2e5_ws2_fused/checkpoint-68000"
     lora_weight_path = None
     green_model, tokenizer, lamed_model = load_model(green_model_path, lamed_model_path, lora_weight_path)
     print(lamed_model_path.split("/")[-2])

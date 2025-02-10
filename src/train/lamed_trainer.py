@@ -20,6 +20,10 @@ class LaMedTrainer(Trainer):
         logger.info("Trainer.model is not a `PreTrainedModel`, only saving its state dict.")
         torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
 
+        if self.args.lora_enable:
+            state_dict_with_lora = self.model.state_dict()
+            torch.save(state_dict_with_lora, os.path.join(self.args.output_dir, 'model_with_lora.bin'))
+            
         if self.tokenizer is not None:
             self.tokenizer.save_pretrained(output_dir)
 

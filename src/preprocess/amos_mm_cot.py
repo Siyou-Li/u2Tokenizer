@@ -6,14 +6,15 @@ from config import config
 
 base_path = config["project_path"]
 
-llama_tokenizer = AutoTokenizer.from_pretrained(
-        os.path.join(base_path, "pretrained_models/Llama-3.2-1B-Instruct"),
+tokenizer = AutoTokenizer.from_pretrained(
+        os.path.join(base_path, "pretrained_models/RadPhi-2"),
         cache_dir=None,
-        model_max_length=512,
-        padding_side="left",
-        pad_token="<unk>",
+        model_max_length=768,
+        padding_side="right",
+        pad_token="<|endoftext|>",
         use_fast=False
         )
+tokenizer.chat_template = "{% for message in messages %}\n{% if message['from'] == 'human' %}\n{{ '<|user|>\n' + message['value'] + eos_token }}\n{% elif message['from'] == 'system' %}\n{{ '<|system|>\n' + message['value'] + eos_token }}\n{% elif message['from'] == 'gpt' %}\n{{ '<|assistant|>\n'  + message['value'] + eos_token }}\n{% endif %}\n{% if loop.last and add_generation_prompt %}\n{{ '<|assistant|>' }}\n{% endif %}\n{% endfor %}"
 
 def cot_process(raw):
     question = raw["question"]
@@ -21,11 +22,11 @@ def cot_process(raw):
     answer = raw["answer"]
     reasoning = raw["reasoning"]
     input_messages = [
-        {"role": "user", "content": "What condition is suggested by the findings in the right ascending colon? A. Diverticulitis, B. Crohn's Disease, C. Ulcerative Colitis, D. Ascending colon cancer"},
-        {"role": "assistant", "content": "The findings of a soft tissue mass with obvious enhancement, and associated intestinal stenosis in the right ascending colon are consistent with ascending colon cancer. The size and characteristics of the lesion are more indicative of neoplasm than the inflammatory conditions listed in the other options. The Answer is D"},
-        {"role": "user", "content": "{} A. {}, B. {}, C. {}, D. {}".format(question, options["A"], options["B"], options["C"], options["D"])}
+        {"from": "human", "value": "What condition is suggested by the findings in the right ascending colon? A. Diverticulitis, B. Crohn's Disease, C. Ulcerative Colitis, D. Ascending colon cancer"},
+        {"from": "gpt", "value": "The findings of a soft tissue mass with obvious enhancement, and associated intestinal stenosis in the right ascending colon are consistent with ascending colon cancer. The size and characteristics of the lesion are more indicative of neoplasm than the inflammatory conditions listed in the other options. The Answer is D"},
+        {"from": "human", "value": "{} A. {}, B. {}, C. {}, D. {}".format(question, options["A"], options["B"], options["C"], options["D"])}
     ]
-    input_cot = llama_tokenizer.apply_chat_template(
+    input_cot = tokenizer.apply_chat_template(
         input_messages,
         tokenize=False,
         add_generation_prompt=True,

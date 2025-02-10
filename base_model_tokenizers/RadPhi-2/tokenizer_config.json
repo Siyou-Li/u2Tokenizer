@@ -313,22 +313,6 @@
       "single_word": false,
       "special": false
     },
-    "50299": {
-      "content": "<|user|>\n",
-      "lstrip": false,
-      "normalized": false,
-      "rstrip": false,
-      "single_word": false,
-      "special": true
-    },
-    "50298": {
-      "content": "</s>\n<|assistant|>\n",
-      "lstrip": false,
-      "normalized": false,
-      "rstrip": false,
-      "single_word": false,
-      "special": true
-    },
     "50297": {
       "content": "<im_patch>",
       "lstrip": false,

@@ -13,10 +13,10 @@ import backoff
 
 model_name= config["openai_server"]["model_name"]
 client = OpenAI(
-    base_url=config["openai_server"]["base_url"],
+    # base_url=config["openai_server"]["base_url"],
     api_key=config["openai_server"]["api_key"],
 )
-
+# print(client)
 
 REWRITE_PROMPT = """
 You are a professional CT medical report expert, help me paraphrase the following CT report.

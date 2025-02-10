@@ -293,6 +293,9 @@ def main():
         use_fast=False,
         trust_remote_code=True
     )
+    
+    if 'phi' in model_args.model_type:
+        tokenizer.chat_template = "{% for message in messages %}\n{% if message['from'] == 'human' %}\n{{ '<|user|>\n' + message['value'] + eos_token }}\n{% elif message['from'] == 'system' %}\n{{ '<|system|>\n' + message['value'] + eos_token }}\n{% elif message['from'] == 'gpt' %}\n{{ '<|assistant|>\n'  + message['value'] + eos_token }}\n{% endif %}\n{% if loop.last and add_generation_prompt %}\n{{ '<|assistant|>' }}\n{% endif %}\n{% endfor %}"
 
     # Define and add special tokens
     # special_token = {"additional_special_tokens": ["<|coord_9|>", "<im_patch>", "<bx_start>", "<bx_end>"]}

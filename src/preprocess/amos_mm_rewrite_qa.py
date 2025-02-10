@@ -22,21 +22,21 @@ for data_t in data_type:
         meta = item["meta"]
         findings = item["labels"]["report"]["findings"]
         pairs = []
-        for qa in item["labels"]["qa"]:
-            question = qa["question"]
-            choices = "Choices: A. {} B. {} C. {} D. {}".format(qa["options"]["A"], qa["options"]["B"], qa["options"]["C"], qa["options"]["D"])
-            question = question + ' ' + choices
-            answer = qa["answer"]
-            pairs.append(json.dumps({
-                    "dataset": "AMOS-MM",
-                    "image": image,
-                    "is_extented": False,
-                    "meta": meta,
-                    "task_type": "VQA-Chioce",
-                    "question": question,
-                    "answer": answer
-                    # "labels": {"report": {"findings": {loc:findings[loc]}}}
-                }, ensure_ascii=False))
+        # for qa in item["labels"]["qa"]:
+        #     question = qa["question"]
+        #     choices = "Choices: A. {} B. {} C. {} D. {}".format(qa["options"]["A"], qa["options"]["B"], qa["options"]["C"], qa["options"]["D"])
+        #     question = question + ' ' + choices
+        #     answer = qa["answer"]
+        #     pairs.append(json.dumps({
+        #             "dataset": "AMOS-MM",
+        #             "image": image,
+        #             "is_extented": False,
+        #             "meta": meta,
+        #             "task_type": "VQA-Chioce",
+        #             "question": question,
+        #             "answer": answer
+        #             # "labels": {"report": {"findings": {loc:findings[loc]}}}
+        #         }, ensure_ascii=False))
         for loc in mrg_type:
             if findings[loc] != "":
                 pairs.append(json.dumps({
@@ -82,7 +82,7 @@ for data_t in data_type:
                 #             "question": qa_pair["question"],
                 #             "answer": qa_pair["answer"]
                 #         }, ensure_ascii=False))
-        with open(output_path, 'w') as f:    
+        with open(output_path, 'a+') as f:    
             for pair in pairs:
                 f.write(pair + "\n")
         print(f"finish writing records for {item['image']}")
