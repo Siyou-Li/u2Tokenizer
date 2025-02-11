@@ -63,7 +63,7 @@ class LlamedModel:
         
         self.model = lamed_model.to(device).eval()
 
-    def inference(self, image, question, tokenizer, lamed_model, temperature=1.0, top_p=0.9):
+    def inference(self, image, question, temperature=1.0, top_p=0.9):
         input_id = self.tokenizer(
             question, add_special_tokens=False, max_length=768, truncation=True, padding="max_length", return_tensors="pt", padding_side="right",
         )['input_ids'].to(device)
@@ -127,7 +127,7 @@ def check_character_and_length(answer):
         return False
     return True
 
-def mrg_annotation(dataloader, tokenizer, lamed_model):
+def mrg_annotation(dataloader, lamed_model):
     gt_report = []
     pred_report= []
 
@@ -137,7 +137,7 @@ def mrg_annotation(dataloader, tokenizer, lamed_model):
         image = batch["image"]
         question = batch["question"][0]
         while True:
-            pred = inference(image, question, tokenizer, lamed_model).strip()
+            pred = lamed_model.inference(image, question).strip()
             if check_character_and_length(pred):
                 break
 
@@ -171,6 +171,7 @@ if __name__ == "__main__":
         return torch.utils.data.dataloader.default_collate(batch)
 
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
-    mean = mrg_annotation(dataloader, llamed_model.tokenizer, llamed_model.model)
+
+    mean = mrg_annotation(dataloader, llamed_model)
     print("Checkpoint: ", lamed_model_path.split("/")[-2])
     print("Mean: ", mean)
