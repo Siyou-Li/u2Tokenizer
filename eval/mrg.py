@@ -144,12 +144,13 @@ def mrg_annotation(dataloader, lamed_model):
         gt_report.append(batch["answer"][0])
         pred_report.append(pred)
 
+    green_model_path = "/data/huanan/GREEN-RadLlama2-7b"
     green_model = GREEN(green_model_path)
     mean, std, green_score_list, summary, result_df = green_model(refs=gt_report, hyps=pred_report)
     return mean
     
 if __name__ == "__main__":
-    lamed_model_path = config["project_path"] + "/checkpoint/checkpoint-13179"
+    lamed_model_path = config["project_path"] + "/checkpoint/checkpoint-18000"
     lora_weight_path = None
     llamed_model = LlamedModel(lamed_model_path, lora_weight_path)
 

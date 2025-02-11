@@ -1,10 +1,12 @@
 import torch.distributed as dist
 import os
 import sys
+import torch
 
 from sklearn.metrics import silhouette_score
 from sklearn.cluster import KMeans
 from sklearn import preprocessing
+import torch.nn.functional as F
 from sentence_transformers import SentenceTransformer
 from scipy.spatial import distance
 import numpy as np
@@ -12,39 +14,172 @@ import numpy as np
 # A dictionary to store rewards for pairs of reference and hypothesis reports
 
 
+# =============================================================================
+# PyTorch implementations for KMeans and silhouette score
+# =============================================================================
+
+def torch_kmeans(data, num_clusters, num_iters=100, tol=1e-4, device=None):
+    """
+    Simple k-means clustering implemented with PyTorch.
+    
+    Args:
+        data (Tensor): shape (n_samples, n_features) – assumed to be normalized.
+        num_clusters (int): number of clusters.
+        num_iters (int): maximum number of iterations.
+        tol (float): tolerance for centroid change.
+        device: device on which to run (if None, auto-detects GPU).
+    
+    Returns:
+        dict: A dictionary with keys:
+            - "labels": Tensor of cluster assignments (n_samples,)
+            - "centroids": Tensor of cluster centroids (num_clusters, n_features)
+    """
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    data = data.to(device)
+
+    n_samples, n_features = data.shape
+
+    # For reproducibility, set manual seed (mimicking random_state=42)
+    torch.manual_seed(42)
+    # Initialize centroids by selecting random data points (without replacement)
+    indices = torch.randperm(n_samples)[:num_clusters]
+    centroids = data[indices].clone()
+
+    for i in range(num_iters):
+        # Compute squared Euclidean distances (using torch.cdist)
+        distances = torch.cdist(data, centroids, p=2)
+        # Assign each sample to the closest centroid
+        labels = torch.argmin(distances, dim=1)
+
+        new_centroids = []
+        for k in range(num_clusters):
+            mask = (labels == k)
+            if mask.sum() == 0:
+                # If a cluster lost all its points, reinitialize it to a random point
+                new_centroid = data[torch.randint(0, n_samples, (1,))]
+            else:
+                new_centroid = data[mask].mean(dim=0)
+            new_centroids.append(new_centroid)
+        new_centroids = torch.stack(new_centroids)
+
+        # Check for convergence
+        if torch.norm(new_centroids - centroids) < tol:
+            centroids = new_centroids
+            break
+
+        centroids = new_centroids
+
+    return {"labels": labels.cpu(), "centroids": centroids.cpu()}
+
+
+def silhouette_score_torch(data, labels):
+    """
+    Computes the silhouette score using PyTorch operations.
+    For each sample i, the silhouette value is:
+    
+         s(i) = (b(i) - a(i)) / max(a(i), b(i))
+    
+    where:
+         a(i) = mean distance of i to all other points in the same cluster,
+         b(i) = minimum over other clusters of the mean distance of i to those points.
+    
+    Args:
+        data (Tensor): shape (n_samples, n_features)
+        labels (Tensor): shape (n_samples,)
+    
+    Returns:
+        float: The average silhouette score.
+    """
+    n_samples = data.shape[0]
+    if n_samples <= 1:
+        return 0.0
+
+    # Compute full pairwise distance matrix (Euclidean distances)
+    dist_matrix = torch.cdist(data, data, p=2)
+    sil_scores = []
+
+    unique_labels = labels.unique()
+    for i in range(n_samples):
+        # Boolean mask for points in the same cluster as i
+        same_cluster = (labels == labels[i])
+        # Exclude self by temporarily setting its mask to False
+        same_cluster_indices = same_cluster.nonzero(as_tuple=True)[0]
+        if same_cluster_indices.numel() > 1:
+            # a(i): mean distance to all other points in the same cluster
+            a = (dist_matrix[i, same_cluster_indices].sum() - 0.0) / (same_cluster_indices.numel() - 1)
+        else:
+            a = 0.0
+
+        # For b(i): compute mean distance to each other cluster and take the minimum
+        b = float('inf')
+        for cl in unique_labels:
+            if cl == labels[i]:
+                continue
+            other_indices = (labels == cl).nonzero(as_tuple=True)[0]
+            if other_indices.numel() > 0:
+                b_candidate = dist_matrix[i, other_indices].mean().item()
+                if b_candidate < b:
+                    b = b_candidate
+        # Compute the silhouette score for sample i
+        if max(a, b) > 0:
+            s = (b - a) / max(a, b)
+        else:
+            s = 0.0
+        sil_scores.append(s)
+    return sum(sil_scores) / len(sil_scores)
+
+
 def compute_largest_cluster(sentences):
     """
-    Computes the largest cluster of sentences using K-means clustering, finds the sentences within the largest cluster, and orders them by their distance to the cluster center.
-
+    Computes the largest cluster of sentences using k-means clustering,
+    then returns the embeddings and the sentences from that cluster ordered
+    by their proximity (cosine distance) to the cluster center.
+    
     Args:
-        sentences (list): List of sentences to be clustered.
-
+        sentences (list): List of sentences.
+    
     Returns:
-        tuple: A tuple containing:
-            - embeddings (ndarray): Normalized embeddings of the input sentences.
-            - sentences_of_largest_cluster (list): Sentences in the largest cluster, ordered by their proximity
-              to the cluster center.
+        tuple: (embeddings, sentences_of_largest_cluster)
+            - embeddings (Tensor): Normalized embeddings.
+            - sentences_of_largest_cluster (list): Sentences in the largest cluster, sorted.
     """
     if len(sentences) == 0:
         return None, None
-    embeddings, kmeans = compute_kmeans(sentences)
-    cluster_sizes = np.bincount(kmeans.labels_)
-    largest_cluster_idx = np.argmax(cluster_sizes)
-    cluster_member_ids = np.where(kmeans.labels_ == largest_cluster_idx)[0]
-    sentences_of_largest_cluster = [sentences[i] for i in cluster_member_ids]
-
-    largest_cluster_mean = kmeans.cluster_centers_[largest_cluster_idx]
-    embeddings_of_largest_cluster = [embeddings[i] for i in cluster_member_ids]
-    distances = distance.cdist(
-        embeddings_of_largest_cluster, [largest_cluster_mean], "cosine"
-    ).flatten()
-    closest_point_indices = np.argsort(distances)[0]
-
-    sentences_of_largest_cluster = sentences_of_largest_cluster[closest_point_indices]
-
+    
+    embeddings, kmeans_result = compute_kmeans(sentences)
+    labels = kmeans_result["labels"]
+    
+    # Compute cluster sizes using torch.bincount
+    cluster_sizes = torch.bincount(labels)
+    largest_cluster_idx = torch.argmax(cluster_sizes)
+    
+    # Get indices of sentences belonging to the largest cluster
+    cluster_member_ids = torch.where(labels == largest_cluster_idx)[0]
+    # Extract corresponding sentences (as a list)
+    sentences_of_largest_cluster = [sentences[i] for i in cluster_member_ids.tolist()]
+    
+    # Get the centroid (cluster center) of the largest cluster
+    largest_cluster_center = kmeans_result["centroids"][largest_cluster_idx]
+    # Get the embeddings of the largest cluster members
+    embeddings_largest = embeddings[cluster_member_ids]
+    
+    # Compute cosine distances:
+    # Since the embeddings are normalized, cosine similarity is just the dot product.
+    # Cosine distance = 1 - cosine similarity.
+    # Expand the centroid to match the number of cluster members.
+    centroid_expanded = largest_cluster_center.unsqueeze(0).expand(embeddings_largest.size(0), -1).to("cuda")
+    cosine_similarities = F.cosine_similarity(embeddings_largest, centroid_expanded, dim=1)
+    cosine_distances = 1 - cosine_similarities  # lower distance means more central
+    
+    # Sort the sentences by increasing cosine distance
+    sorted_indices = torch.argsort(cosine_distances)
+    sentences_of_largest_cluster = [sentences_of_largest_cluster[i] for i in sorted_indices.tolist()]
+    
     return embeddings, sentences_of_largest_cluster
 
 
+model = SentenceTransformer("/data/huanan/paraphrase-mpnet-base-v2")
 def compute_kmeans(sentences):
     """
     Computes K-means clustering for a list of sentences by generating their embeddings, normalizing the embeddings, and determining the optimal number of clusters using binary search.
@@ -58,15 +193,13 @@ def compute_kmeans(sentences):
             - kmeans (KMeans): The KMeans object with the optimal number of clusters determined.
     """
     # sentence embeddings
-    model = SentenceTransformer("sentence-transformers/paraphrase-mpnet-base-v2")
-    embeddings = model.encode(sentences)
+    embeddings = model.encode(sentences, convert_to_tensor=True)
     # normalize the embeddings for equivalent computation of the cosine distance
-    embeddings = preprocessing.normalize(embeddings)
+    embeddings = F.normalize(embeddings, p=2, dim=1)
     # compute the number of clusters with binary search
-    kmeans = binary_search_optimal_kmeans(
-        embeddings, min_k=0, max_k=(len(sentences) - 1)
-    )
-    return embeddings, kmeans
+    n = embeddings.shape[0]
+    kmeans_result = binary_search_optimal_kmeans(embeddings, min_k=1, max_k=(n - 1) if n > 1 else 1)
+    return embeddings, kmeans_result
 
 
 def binary_search_optimal_kmeans(data, min_k, max_k):
@@ -81,25 +214,22 @@ def binary_search_optimal_kmeans(data, min_k, max_k):
     Returns:
         list: List of cleaned response strings.
     """
-    best_k = min_k
     best_score = -1
-    best_kmeans = KMeans(n_clusters=1, random_state=42).fit(
-        data
-    )  # start with 1 cluster for len(data) < 2
+    # Start with 1 cluster (if the data is too small)
+    best_kmeans = torch_kmeans(data, 1)
 
     while min_k <= max_k:
         mid_k = (min_k + max_k) // 2
         if mid_k < 2:
             break
 
-        kmeans = KMeans(n_clusters=mid_k, random_state=42).fit(data)
-        labels = kmeans.labels_
-        score = silhouette_score(data, labels)
+        kmeans_result = torch_kmeans(data, mid_k)
+        labels = kmeans_result["labels"].to(data.device)
+        score = silhouette_score_torch(data, labels)
 
         if score > best_score:
             best_score = score
-            best_k = mid_k
-            best_kmeans = kmeans  # Update the best KMeans model
+            best_kmeans = kmeans_result  # Update the best KMeans model
             min_k = mid_k + 1
         else:
             max_k = mid_k - 1
