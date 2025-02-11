@@ -132,6 +132,8 @@ def mrg_annotation(dataloader, tokenizer, lamed_model):
     pred_report= []
 
     for batch in tqdm(dataloader):
+        if batch is None:
+            continue
         image = batch["image"]
         question = batch["question"][0]
         while True:
@@ -147,7 +149,7 @@ def mrg_annotation(dataloader, tokenizer, lamed_model):
     return mean
     
 if __name__ == "__main__":
-    lamed_model_path = config["project_path"] + "/checkpoint/Med3dLLM_0207_mrg_phi2@bs2_acc1_ep16_lr2e5_ws2_fused/checkpoint-68000"
+    lamed_model_path = config["project_path"] + "/checkpoint/checkpoint-13179"
     lora_weight_path = None
     llamed_model = LlamedModel(lamed_model_path, lora_weight_path)
 

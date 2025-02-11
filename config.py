@@ -14,4 +14,4 @@ import pathlib
 f = open("config/project.json", encoding='utf-8')
 config = json.load(f)
 
-config["project_path"] = str(pathlib.Path(__file__).parent.parent)
+config["project_path"] = str(pathlib.Path(__file__).parent)
