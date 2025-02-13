@@ -172,36 +172,4 @@ class ViT3DTower(nn.Module):
     @property
     def hidden_size(self):
         return self.vision_tower.hidden_size
-    
-if __name__ == "__main__":
-    import nibabel as nib
-    dtype = torch.float32
-    device = torch.device("cuda:0")
-
-    config = vit.ViT3DTowerConfig()
-    config.image_channel = 1
-    config.image_size = (96, 96, 96)
-    config.patch_size = (16, 16, 16)
-    config.vision_select_layer = -1
-    config.vision_select_feature = 'cls_patch'
-
-    model = vit.ViT3DTower(config)
-    model = model.to(device=device)
-
-    image_features = model(image_pt)
-    print(image_features.shape)
-
-    image = sikt.GetImageFromArray(image_np)
-    ssv.display(image)
-    print('image_np', image_np.shape)
-
-    slice = image_np.shape[0]
-    for i in range(slice):
-        plt.figure()
-        plt.subplot(1, 2, 1)
-        plt.imshow(image_np[i], cmap='gray')
-        plt.axis('off')
-        plt.subplot(1, 2, 2)
-        plt.imshow(image_features[0][0][i].cpu().numpy(), cmap='gray')
-        plt.axis('off')
-        plt.show()
+        

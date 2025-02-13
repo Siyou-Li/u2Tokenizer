@@ -8,8 +8,6 @@ import torch
 import transformers
 from transformers import AutoTokenizer, LlamaForCausalLM, AutoModelForCausalLM
 from dataclasses import dataclass, field
-#from src.dataset.multi_dataset import UniDatasets, CapDataset, TextDatasets, VQADataset
-#from src.dataset.amos_mm_monai_dataset import MRGMIXDatasets
 from src.dataset.fused_dataset import FusedDataset
 from src.model.language_model import LamedLlamaForCausalLM, LamedPhiForCausalLM
 from src.train.lamed_trainer import LaMedTrainer
@@ -44,6 +42,7 @@ class ModelArguments:
     tune_mm_mlp_adapter: bool = field(default=False, metadata={"help": "Used in pretrain: tune mm_projector and embed_tokens"})
     pretrain_mm_mlp_adapter: Optional[str] = field(default=None, metadata={"help": "Path to pretrained mm_projector and embed_tokens."})
     checkpoint_path: str = field(default=None, metadata={"help": "Path to Checkpoint"})
+    
     # image
     image_channel: int = field(default=1)
     image_size: tuple = field(default=(256, 256, 32))
@@ -72,7 +71,13 @@ class ModelArguments:
     wandb_project_name: Optional[str] = field(default="AMOS-MM", metadata={"help": "wandb project name"})
     wandb_run_name: Optional[str] = field(default="test", metadata={"help": "wandb run name"})
 
-
+    # linear 3d tokenizer config
+    enable_linear_3d_tokenizer: bool = False
+    l3dt_num_heads: int = 8
+    l3dt_num_layers: int = 4
+    l3dt_top_k: int = 1024
+    use_multi_scale: bool = True
+    num_3d_query_token: int = 256
 
 @dataclass
 class DataArguments:
@@ -126,7 +131,6 @@ class TrainingArguments(transformers.TrainingArguments):
     dataloader_pin_memory: bool = False # fast
     dataloader_num_workers: int = 2
     report_to: str = "tensorboard"
-
 
 def compute_metrics(eval_preds):
     labels_ids = eval_preds.label_ids
@@ -206,9 +210,6 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer,
     
     # save tokenizer
     trainer.tokenizer.save_pretrained(output_dir)
-    
-
-
 
 def find_all_linear_names(model):
     cls = torch.nn.Linear
@@ -252,19 +253,21 @@ class DataCollator:
                 segs=segs,
             )
         else:
-            images, input_ids, labels, attention_mask = tuple(
-                [b[key] for b in batch] for key in ('image', 'input_id', 'label', 'attention_mask'))
+            images, input_ids, labels, attention_mask, question_ids = tuple(
+                [b[key] for b in batch] for key in ('image', 'input_id', 'label', 'attention_mask', 'question_ids'))
 
             images = torch.cat([_.unsqueeze(0) for _ in images], dim=0)
             input_ids = torch.cat([_.unsqueeze(0) for _ in input_ids], dim=0)
             labels = torch.cat([_.unsqueeze(0) for _ in labels], dim=0)
             attention_mask = torch.cat([_.unsqueeze(0) for _ in attention_mask], dim=0)
+            question_ids = torch.cat([_.unsqueeze(0) for _ in question_ids], dim=0)
 
             return_dict = dict(
                 images=images,
                 input_ids=input_ids,
                 labels=labels,
                 attention_mask=attention_mask,
+                question_ids=question_ids,
             )
         return return_dict
 
@@ -310,12 +313,12 @@ def main():
     # Convert special tokens to token IDs and set related arguments
     model_args.img_token_id = tokenizer.convert_tokens_to_ids("<im_patch>")
     model_args.vocab_size = len(tokenizer)
-    print("img_token_id: ", model_args.img_token_id)
+    rank0_print("img_token_id: ", model_args.img_token_id)
     rank0_print("vocab_size: ", model_args.vocab_size)
 
     rank0_print("="*20 + " Model preparation " + "="*20)
     if model_args.checkpoint_path is not None:
-        print("Loading model from checkpoint")
+        rank0_print("Loading model from checkpoint")
         tokenizer = AutoTokenizer.from_pretrained(
             model_args.checkpoint_path,
             model_max_length=training_args.model_max_length,
@@ -334,7 +337,7 @@ def main():
         # model.model.norm.requires_grad_(False)
         # if freeze vision tower
         if model_args.freeze_vision_tower:
-            print("Freezing vision tower")
+            rank0_print("Freezing vision tower")
             model.vision_tower.requires_grad_(not model_args.freeze_vision_tower)
         # unuesd parameters
         model = accelerator.unwrap_model(model)
@@ -342,14 +345,14 @@ def main():
     else:
         if model_args.vision_tower is not None:
             if 'llama' in model_args.model_type:
-                print("Base model: Llama")
+                rank0_print("Base model: Llama")
                 model = LamedLlamaForCausalLM.from_pretrained(
                     model_args.model_name_or_path,
                     cache_dir=training_args.cache_dir,
                     trust_remote_code=True
                 )
             elif 'phi' in model_args.model_type:
-                print("Base model: Phi")
+                rank0_print("Base model: Phi")
                 model = LamedPhiForCausalLM.from_pretrained(
                     model_args.model_name_or_path,
                     cache_dir=training_args.cache_dir,
@@ -371,9 +374,6 @@ def main():
         if model_args.freeze_backbone:
             # freeze half of the model
             model.model.requires_grad_(False)
-            model.model.embed_tokens.requires_grad_(True)
-            for layer in model.model.layers[:-16]:
-                layer.requires_grad_(True)
             
         model.enable_input_require_grads()
         if training_args.gradient_checkpointing:
@@ -429,12 +429,11 @@ def main():
     rank0_print("vision tokens output from projector: ", data_args.proj_out_num)
     data_args.seg_enable = hasattr(model.get_model(), "seg_module")
 
-    mode = 'trilinear'
     max_length=data_args.max_length
     image_tokens_num=data_args.proj_out_num
     
-    train_dataset = FusedDataset(data_args.train_base_path, data_args.train_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training")
-    eval_dataset = FusedDataset(data_args.val_base_path, data_args.val_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="valuation")
+    train_dataset = FusedDataset(data_args.train_base_path, data_args.train_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training", enable_linear_3d_tokenizer=model_args.enable_linear_3d_tokenizer)
+    eval_dataset = FusedDataset(data_args.val_base_path, data_args.val_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="valuation", enable_linear_3d_tokenizer=model_args.enable_linear_3d_tokenizer)
     data_collator = DataCollator()
     
     rank0_print("="*20 + " Training " + "="*20)

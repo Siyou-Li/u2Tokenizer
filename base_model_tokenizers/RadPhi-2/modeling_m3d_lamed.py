@@ -1845,7 +1845,7 @@ class LamedMetaForCausalLM(ABC):
             image_features = self.encode_images(images)
             inputs_embeds = self.get_model().embed_tokens(input_ids)
             inputs_embeds = torch.cat(
-                (inputs_embeds[:, :1, :], image_features, inputs_embeds[:, (image_features.shape[1] + 1):, :]), dim=1)
+                (inputs_embeds[:, :6, :], image_features, inputs_embeds[:, (image_features.shape[1] + 6):, :]), dim=1)
         return None, position_ids, attention_mask, past_key_values, inputs_embeds, labels
 
     def initialize_vision_tokenizer(self, model_args, tokenizer):

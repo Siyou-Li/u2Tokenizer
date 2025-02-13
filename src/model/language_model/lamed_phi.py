@@ -44,7 +44,7 @@ class LamedPhiForCausalLM(LamedMetaForCausalLM, PhiForCausalLM):
             labels: Optional[torch.LongTensor] = None,
             attention_mask: Optional[torch.Tensor] = None,
             segs: Optional[torch.FloatTensor] = None,
-
+            question_ids: Optional[torch.LongTensor] = None,
             position_ids: Optional[torch.LongTensor] = None,
             past_key_values: Optional[List[torch.FloatTensor]] = None,
             inputs_embeds: Optional[torch.FloatTensor] = None,
@@ -72,6 +72,7 @@ class LamedPhiForCausalLM(LamedMetaForCausalLM, PhiForCausalLM):
                 past_key_values,
                 labels,
                 images,
+                question_ids
             )
 
         try:
@@ -153,6 +154,7 @@ class LamedPhiForCausalLM(LamedMetaForCausalLM, PhiForCausalLM):
     ) -> Union[GenerateOutput, torch.LongTensor, Any]:
         position_ids = kwargs.pop("position_ids", None)
         attention_mask = kwargs.pop("attention_mask", None)
+        question_ids = kwargs.pop("question_ids", None)
         if "inputs_embeds" in kwargs:
             raise NotImplementedError("`inputs_embeds` is not supported")
 
@@ -171,6 +173,7 @@ class LamedPhiForCausalLM(LamedMetaForCausalLM, PhiForCausalLM):
                 None,
                 None,
                 images,
+                question_ids
             )
         else:
             inputs_embeds = self.get_model().embed_tokens(inputs)

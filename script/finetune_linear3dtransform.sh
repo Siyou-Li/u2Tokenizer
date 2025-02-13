@@ -3,20 +3,21 @@
 # run "accelerate config" first!
 export WANDB_API_KEY=00da6485031077ad0ca743ecf911ade54986ffaa
 export PROJECT_PATH=/import/c4dm-04/siyoul/Med3DLLM
-export CHECKPOINT_NAME=Med3dLLM_0207_mrg_phi2@bs2_acc1_ep16_lr2e5_ws2_fused
+export CHECKPOINT_NAME=amosmm_chatgpt_phi2_l3dt_lora_0212@bs1_acc1_ep16_lr2e5_ws2_fused
 
-CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch --config_file $PROJECT_PATH/config/accelerate_config.yaml\
+CUDA_VISIBLE_DEVICES=0,1 accelerate launch --config_file $PROJECT_PATH/config/accelerate_config.yaml\
     --main_process_port 29501 \
     src/train/train.py \
     --version v0 \
     --model_name_or_path  $PROJECT_PATH/pretrained_models/RadPhi-2 \
     --model_type phi \
+    --lora_enable True \
     --vision_tower vit3d \
     --pretrain_vision_model $PROJECT_PATH/pretrained_models/M3D-CLIP/pretrained_ViT.bin \
     --tune_mm_mlp_adapter False \
     --bf16 True \
     --train_base_path $PROJECT_PATH/datasets \
-    --train_jsonl_path $PROJECT_PATH/datasets/Fused_Dataset/train/dataset_chest_extension_qwen32b.jsonl \
+    --train_jsonl_path $PROJECT_PATH/datasets/Fused_Dataset/train/amos_mm_rewrite_chatgpt_4o_mini.jsonl \
     --val_base_path $PROJECT_PATH/datasets \
     --val_jsonl_path $PROJECT_PATH/datasets/Fused_Dataset/val/amos_mm_findings.jsonl \
     --output_dir $PROJECT_PATH/checkpoint/$CHECKPOINT_NAME \
@@ -42,5 +43,6 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch --config_file $PROJECT_PATH/confi
     --wandb_project_name AMOS-MM \
     --wandb_run_name $CHECKPOINT_NAME \
     --freeze_vision_tower False \
-    --freeze_backbone False \
+    --freeze_backbone True \
     --model_max_length 1024 \
+    --enable_linear_3d_tokenizer True \

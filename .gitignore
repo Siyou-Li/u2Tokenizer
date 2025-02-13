@@ -6,5 +6,5 @@ datasets
 submit
 pretrained_models
 /output/
-config/project.json
+config/
 .vscode/

@@ -4,7 +4,7 @@ from typing import Optional
 import transformers
 from transformers import AutoTokenizer
 from dataclasses import dataclass, field
-from LaMed.src.model.language_model import LamedLlamaForCausalLM
+from src.model.language_model import LamedLlamaForCausalLM
 
 @dataclass
 class ModelArguments:

@@ -53,5 +53,5 @@
   "vision_select_feature": "patch",
   "vision_select_layer": -1,
   "vision_tower": "vit3d",
-  "vocab_size": 50300
+  "vocab_size": 50298
 }

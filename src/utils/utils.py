@@ -77,3 +77,42 @@ def normalize(ct_tensor):
     ct_numpy = np.transpose(ct_numpy, (0, 3, 1, 2))
     
     return ct_numpy
+
+# def normalize(ct_tensor):
+#     # Flatten a copy of the tensor to work with voxel values
+#     ct_voxel = ct_tensor.view(-1)
+    
+#     # Compute the threshold as the mean of all voxel values
+#     threshold = torch.mean(ct_voxel)
+    
+#     # Filter out only the voxel values that are above the threshold
+#     voxel_filtered = ct_voxel[ct_voxel > threshold]
+    
+#     # Compute the lower and upper bounds based on percentiles.
+#     # Note: np.percentile with 0.05 corresponds to the 0.0005 quantile (i.e. 0.05/100)
+#     # and 99.95 corresponds to the 0.9995 quantile.
+#     lower_bound = torch.quantile(voxel_filtered, 0.0005)
+#     upper_bound = torch.quantile(voxel_filtered, 0.9995)
+    
+#     # Compute the mean and std of the filtered voxels
+#     filtered_mean = torch.mean(voxel_filtered)
+#     filtered_std = torch.std(voxel_filtered)
+    
+#     # Clip the values of the tensor to be within the computed bounds
+#     ct_tensor = torch.clamp(ct_tensor, min=lower_bound, max=upper_bound)
+    
+#     # Normalize using the filtered mean and std (guarding against division by zero)
+#     ct_tensor = (ct_tensor - filtered_mean) / torch.clamp(filtered_std, min=1e-8)
+    
+#     # Shift the tensor so its minimum value is 0
+#     ct_tensor = ct_tensor - torch.min(ct_tensor)
+    
+#     # Scale the tensor so that its maximum value is 1 (again, avoiding division by zero)
+#     ct_tensor = ct_tensor / torch.clamp(torch.max(ct_tensor), min=1e-8)
+    
+#     # Optionally, if you need to add a channel dimension and transpose,
+#     # you can uncomment the following lines:
+#     # ct_tensor = ct_tensor.unsqueeze(0)
+#     # ct_tensor = ct_tensor.permute(0, 3, 1, 2)
+    
+#     return ct_tensor

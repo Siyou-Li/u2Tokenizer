@@ -13,11 +13,12 @@ import random
 from monai.utils import MAX_SEED, get_seed
 from monai.transforms import Randomizable
 from src.utils.data_transforms import train_transforms, val_transforms
+from src.utils.linear_3d_transform import Linear3DTransform
 
 class FusedDataset(Dataset, Randomizable):
     def __init__(
             self, base_path, jsonl_path, tokenizer, max_length,\
-            image_tokens_num=1024, data_type="training"
+            image_tokens_num=1024, data_type="training", enable_linear_3d_tokenizer=True
             ):
         self.base_path = base_path
         self.tokenizer = tokenizer
@@ -27,13 +28,17 @@ class FusedDataset(Dataset, Randomizable):
         self.annotations = self.load_annotations(os.path.join(base_path, jsonl_path))
         self.set_random_state(seed=get_seed())
         self._seed = 0  # transform synchronization seed
-        # self.loader = LoadImage(NibabelReader, image_only=True, ensure_channel_first=False)
-        self.train_transforms = train_transforms
-        self.val_transforms = val_transforms
+
         if self.data_type == "training" or self.data_type == "train":
-            self.image_transforms = self.train_transforms
+            if enable_linear_3d_tokenizer:
+                self.image_transforms = Linear3DTransform(mode='bilinear', data_type="training")
+            else:
+                self.image_transforms = train_transforms
         else:
-            self.image_transforms = self.val_transforms     
+            if enable_linear_3d_tokenizer:
+                self.image_transforms = Linear3DTransform(mode='bilinear', data_type="validation")
+            else:
+                self.image_transforms = val_transforms     
         
     def randomize(self, data):
         self._seed = self.R.randint(MAX_SEED, dtype="uint32")
@@ -127,6 +132,9 @@ class FusedDataset(Dataset, Randomizable):
 
         question_len = torch.sum(question_tensor["attention_mask"][0])
 
+        question_ids = self.tokenizer(
+            prompt_question, add_special_tokens=False, max_length=self.max_length, truncation=True, padding="max_length", return_tensors="pt", padding_side="right"
+        )["input_ids"][0]
         label = input_id.clone()
         label[:question_len] = -100
         if self.tokenizer.pad_token_id == self.tokenizer.eos_token_id:
@@ -143,7 +151,7 @@ class FusedDataset(Dataset, Randomizable):
             'label': label,
             'attention_mask': attention_mask,
             'question': question,
-            'question_tensor': question_tensor,
+            'question_ids': question_ids,
             'answer': answer,
             'question_type': "Caption",
         }

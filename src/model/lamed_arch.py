@@ -6,6 +6,7 @@ import torch.nn as nn
 from .multimodal_encoder.builder import build_vision_tower
 from .multimodal_projector.builder import build_mm_projector
 from .segmentation_module.builder import build_segmentation_module
+from .linear_3d_tokenizer.builder import build_linear3dtokenizer_tower
 from src.model.loss import BCELoss, BinaryDiceLoss
 
 
@@ -15,16 +16,14 @@ class LamedMetaModel:
 
         self.config = config
         self.seg_enable = False
-        #self.unet3d_header = Conv3DHead()
         
         if hasattr(config, "vision_tower"):
             self.vision_tower = build_vision_tower(config)
             self.mm_projector = build_mm_projector(config)
+            self.linear3d_tokenizer = build_linear3dtokenizer_tower(config)
 
         if hasattr(config, "segmentation_module") and config.segmentation_module is not None:
             self.seg_enable = True
-            #self.seg_module = build_segmentation_module(config)
-
             self.seg_projector = nn.Sequential(
                 nn.Linear(config.hidden_size, config.hidden_size),
                 nn.ReLU(inplace=True),
@@ -34,6 +33,10 @@ class LamedMetaModel:
             self.dice_loss = BinaryDiceLoss()
             self.bce_loss = BCELoss()
 
+    def get_linear3d_tokenizer(self):
+        linear3d_tokenizer = getattr(self, 'linear3d_tokenizer', None)
+        return linear3d_tokenizer
+    
     def get_vision_tower(self):
         vision_tower = getattr(self, 'vision_tower', None)
         return vision_tower
@@ -53,6 +56,12 @@ class LamedMetaModel:
         self.config.proj_pooling_type = model_args.proj_pooling_type
         self.config.proj_pooling_size = model_args.proj_pooling_size
 
+        self.config.enable_linear_3d_tokenizer = model_args.enable_linear_3d_tokenizer
+        self.config.l3dt_num_heads = model_args.l3dt_num_heads
+        self.config.l3dt_num_layers = model_args.l3dt_num_layers
+        self.config.l3dt_top_k = model_args.l3dt_top_k
+        self.config.use_multi_scale = model_args.use_multi_scale
+        self.config.num_3d_query_token = model_args.num_3d_query_token
         # vision tower
         #self.unet3d_header.requires_grad_(True)
         if self.get_vision_tower() is None:
@@ -60,6 +69,9 @@ class LamedMetaModel:
             # If you have a more robust vision encoder, try freezing the vision tower by requires_grad_(False)
             self.vision_tower.requires_grad_(not model_args.freeze_vision_tower)
 
+
+        if self.get_linear3d_tokenizer() is None and model_args.enable_linear_3d_tokenizer:
+            self.linear3d_tokenizer = build_linear3dtokenizer_tower(self.config)
 
         if model_args.pretrain_vision_model is not None:
             vision_model_weights = torch.load(model_args.pretrain_vision_model, map_location='cpu')
@@ -113,6 +125,9 @@ class LamedMetaForCausalLM(ABC):
     def get_vision_tower(self):
         return self.get_model().get_vision_tower()
 
+    def get_linear3d_tokenizer(self):
+        return self.get_model().get_linear3d_tokenizer()
+    
     def encode_images(self, images):
         #images = self.get_model().unet3d_header(images)
         image_features = self.get_model().get_vision_tower()(images)
@@ -120,15 +135,24 @@ class LamedMetaForCausalLM(ABC):
         return image_features
 
     def prepare_inputs_for_multimodal(
-        self, input_ids, position_ids, attention_mask, past_key_values, labels,
-        images,
+        self, input_ids, position_ids, attention_mask, past_key_values, labels, 
+        images, question_ids
     ):
         vision_tower = self.get_vision_tower()
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
             return input_ids, position_ids, attention_mask, past_key_values, None, labels
         else:
-            image_features = self.encode_images(images)
+            if self.config.enable_linear_3d_tokenizer:
+                B, C, D, H, W = images.shape
+                images = images.view(B * C, 1, D, H, W)
+                image_features = self.encode_images(images)
+                v_tokens = image_features.view(B, C, image_features.shape[-2], image_features.shape[-1])
+                t_tokens = self.get_model().embed_tokens(question_ids)
+                image_features = self.get_linear3d_tokenizer()(v_token=v_tokens, t_token=t_tokens)
+            else:
+                image_features = self.encode_images(images)
             inputs_embeds = self.get_model().embed_tokens(input_ids)
+            #print(inputs_embeds.shape, image_features.shape)
             inputs_embeds = torch.cat(
                 (inputs_embeds[:, :6, :], image_features, inputs_embeds[:, (image_features.shape[1] + 6):, :]), dim=1)
         return None, position_ids, attention_mask, past_key_values, inputs_embeds, labels
