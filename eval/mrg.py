@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from green_score import GREEN
+from green_score_accelerate import GREEN
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import os
 import torch
@@ -64,6 +64,7 @@ class LlamedModel:
         self.model = lamed_model.to(device).eval()
 
     def inference(self, image, question, temperature=1.0, top_p=0.9):
+
         input_id = self.tokenizer(
             question, add_special_tokens=False, max_length=768, truncation=True, padding="max_length", return_tensors="pt", padding_side="right",
         )['input_ids'].to(device)
@@ -131,6 +132,7 @@ def mrg_annotation(dataloader, lamed_model):
     gt_report = []
     pred_report= []
 
+    num = 0
     for batch in tqdm(dataloader):
         if batch is None:
             continue
@@ -143,14 +145,17 @@ def mrg_annotation(dataloader, lamed_model):
 
         gt_report.append(batch["answer"][0])
         pred_report.append(pred)
+        num += 1
+        if num == 10:
+            break
 
-    green_model_path = "/data/huanan/GREEN-RadLlama2-7b"
+    green_model_path = "/import/c4dm-04/siyoul/Med3DLLM/pretrained_models/GREEN-RadLlama2-7b"
     green_model = GREEN(green_model_path)
     mean, std, green_score_list, summary, result_df = green_model(refs=gt_report, hyps=pred_report)
     return mean
     
 if __name__ == "__main__":
-    lamed_model_path = config["project_path"] + "/checkpoint/checkpoint-18000"
+    lamed_model_path = config["project_path"] + "/checkpoint/amosmm_chatgpt_phi2_0210@bs2_acc1_ep16_lr2e5_ws2_fused/checkpoint-132000"
     lora_weight_path = None
     llamed_model = LlamedModel(lamed_model_path, lora_weight_path)
 
@@ -160,9 +165,10 @@ if __name__ == "__main__":
         val_base_path, 
         val_jsonl_path, 
         llamed_model.tokenizer, 
-        max_length=2048, 
+        max_length=1024, 
         image_tokens_num=256, 
-        data_type="valuation"
+        data_type="valuation",
+        enable_linear_3d_tokenizer=False
     )
 
     def collate_fn(batch):

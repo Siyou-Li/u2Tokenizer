@@ -8,8 +8,9 @@ import torch
 import transformers
 from transformers import AutoTokenizer, LlamaForCausalLM, AutoModelForCausalLM
 from dataclasses import dataclass, field
-from src.dataset.fused_dataset import FusedDataset
-from src.model.language_model import LamedLlamaForCausalLM, LamedPhiForCausalLM
+from src.dataset.fused_dataset_m3d import FusedDataset
+from src.dataset.multi_dataset import UniDatasets, CapDataset, TextDatasets, VQADataset
+from src.med3d_model.language_model import LamedLlamaForCausalLM, LamedPhi3ForCausalLM
 from src.train.lamed_trainer import LaMedTrainer
 import os
 import torch._dynamo
@@ -69,8 +70,8 @@ class ModelArguments:
 
     # linear 3d tokenizer config
     enable_linear_3d_tokenizer: bool = False
-    l3dt_num_heads: int = 4
-    l3dt_num_layers: int = 2
+    l3dt_num_heads: int = 8
+    l3dt_num_layers: int = 4
     l3dt_top_k: int = 1024
     use_multi_scale: bool = True
     num_3d_query_token: int = 256
@@ -81,6 +82,10 @@ class DataArguments:
     train_base_path: str = field(default="", metadata={"help": "Path to image data."})
     val_jsonl_path: str = field(default="", metadata={"help": "Path to caption data."})
     val_base_path: str = field(default="", metadata={"help": "Path to image data."})
+    
+    # caption data
+    data_root: str = field(default="/import/c4dm-04/siyoul/Med3DLLM/datasets/M3D-Cap/", metadata={"help": "Root directory for all data."})
+    cap_data_path: str = field(default="/import/c4dm-04/siyoul/Med3DLLM/datasets/M3D-Cap/M3D_Cap_npy/M3D_Cap.json", metadata={"help": "Path to caption data."})
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -256,116 +261,79 @@ def main():
 
     rank0_print("="*20 + " Tokenizer preparation " + "="*20)
     # Load tokenizer from the given path with specified configurations
-    pad_token = "<unk>"
-    if 'phi' in model_args.model_type:
-        pad_token = "<|endoftext|>"
-
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
         model_max_length=training_args.model_max_length,
         padding_side="right",
-        pad_token=pad_token,
         use_fast=False,
-        trust_remote_code=True
     )
-    
-    if 'phi' in model_args.model_type:
-        tokenizer.chat_template = "{% for message in messages %}\n{% if message['from'] == 'human' %}\n{{ '<|user|>\n' + message['value'] + eos_token }}\n{% elif message['from'] == 'system' %}\n{{ '<|system|>\n' + message['value'] + eos_token }}\n{% elif message['from'] == 'gpt' %}\n{{ '<|assistant|>\n'  + message['value'] + eos_token }}\n{% endif %}\n{% if loop.last and add_generation_prompt %}\n{{ '<|assistant|>' }}\n{% endif %}\n{% endfor %}"
 
     # Define and add special tokens
-    # special_token = {"additional_special_tokens": ["<|coord_9|>", "<im_patch>", "<bx_start>", "<bx_end>"]}
+    # special_token = {"additional_special_tokens": ["<im_patch>", "<bx_start>", "<bx_end>"]}
     # tokenizer.add_special_tokens(
     #     special_token
     # )
-    # tokenizer.add_tokens("[SEG]")
 
     if tokenizer.unk_token is not None and tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.unk_token
+    if 'llama3' in model_args.model_type:
+        tokenizer.eos_token_id = 128001
+        tokenizer.pad_token = tokenizer.eos_token
 
     # Convert special tokens to token IDs and set related arguments
     model_args.img_token_id = tokenizer.convert_tokens_to_ids("<im_patch>")
     model_args.vocab_size = len(tokenizer)
-    rank0_print("img_token_id: ", model_args.img_token_id)
     rank0_print("vocab_size: ", model_args.vocab_size)
+    rank0_print("special tokens: ", tokenizer.special_tokens_map)
 
     rank0_print("="*20 + " Model preparation " + "="*20)
-    if model_args.checkpoint_path is not None:
-        rank0_print("Loading model from checkpoint")
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_args.checkpoint_path,
-            model_max_length=training_args.model_max_length,
-            padding_side="right",
-            use_fast=False,
-            trust_remote_code=True
-        )
-        model = AutoModelForCausalLM.from_pretrained(
-            model_args.checkpoint_path,
-            trust_remote_code=True,
-            dtype=torch.bfloat16
-        )
-        # # freeze the llama model
-        # model.model.embed_tokens.requires_grad_(False)
-        # model.model.layers.requires_grad_(False)
-        # model.model.norm.requires_grad_(False)
-        # if freeze vision tower
-        if model_args.freeze_vision_tower:
-            rank0_print("Freezing vision tower")
-            model.vision_tower.requires_grad_(not model_args.freeze_vision_tower)
-        # unuesd parameters
-        model = accelerator.unwrap_model(model)
-        
-    else:
-        if model_args.vision_tower is not None:
-            if 'llama' in model_args.model_type:
-                rank0_print("Base model: Llama")
-                model = LamedLlamaForCausalLM.from_pretrained(
-                    model_args.model_name_or_path,
-                    cache_dir=training_args.cache_dir,
-                    trust_remote_code=True
-                )
-            elif 'phi' in model_args.model_type:
-                rank0_print("Base model: Phi")
-                model = LamedPhiForCausalLM.from_pretrained(
-                    model_args.model_name_or_path,
-                    cache_dir=training_args.cache_dir,
-                    trust_remote_code=True
-                )
-            else:
-                raise ValueError(f"Unknown Model Type {model_args.model_type}")
-        else:
-            model = AutoModelForCausalLM.from_pretrained(
+    if model_args.vision_tower is not None:
+        if 'llama' in model_args.model_type:
+            rank0_print("Base model: ", model_args.model_name_or_path)
+            model = LamedLlamaForCausalLM.from_pretrained(
                 model_args.model_name_or_path,
                 cache_dir=training_args.cache_dir,
-                trust_remote_code=True,
-                dtype=torch.bfloat16
+                bos_token_id=tokenizer.bos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
             )
+        elif 'phi3' in model_args.model_type:
+            rank0_print("Base model: ", model_args.model_name_or_path)
+            model = LamedPhi3ForCausalLM.from_pretrained(
+                model_args.model_name_or_path,
+                cache_dir=training_args.cache_dir
+                )
+        else:
+            raise ValueError(f"Unknown Model Type {model_args.model_type}")
+    else:
+        model = LlamaForCausalLM.from_pretrained(
+            model_args.model_name_or_path,
+            cache_dir=training_args.cache_dir
+        )
 
-        model.config.use_cache = False
-        model.config.image_size = model_args.image_size
+    model.config.use_cache = False
 
-        if model_args.freeze_backbone:
-            # freeze half of the model
-            model.model.requires_grad_(False)
-            
-        model.enable_input_require_grads()
-        if training_args.gradient_checkpointing:
-            model.gradient_checkpointing_enable()
+    if model_args.freeze_backbone:
+        model.model.requires_grad_(False)
 
-        # initialize vision and seg modules on LLM
-        if model_args.vision_tower is not None:
-            model.get_model().initialize_vision_modules(model_args=model_args)
-        if model_args.segmentation_module is not None:
-            model.get_model().initialize_seg_modules(model_args=model_args)
+    model.enable_input_require_grads()
+    if training_args.gradient_checkpointing:
+        model.gradient_checkpointing_enable()
 
-        model.config.tune_mm_mlp_adapter = training_args.tune_mm_mlp_adapter = model_args.tune_mm_mlp_adapter
-        if model_args.tune_mm_mlp_adapter:
-            model.requires_grad_(False)
-            for p in model.get_model().mm_projector.parameters():
-                p.requires_grad = True
+    # initialize vision and seg modules on LLM
+    if model_args.vision_tower is not None:
+        model.get_model().initialize_vision_modules(model_args=model_args)
+    else:
+        rank0_print("No vision tower is initialized.")
 
-        model_args.num_new_tokens = 5
-        model.initialize_vision_tokenizer(model_args, tokenizer)
+    model.config.tune_mm_mlp_adapter = training_args.tune_mm_mlp_adapter = model_args.tune_mm_mlp_adapter
+    if model_args.tune_mm_mlp_adapter:
+        model.requires_grad_(False)
+        for p in model.get_model().mm_projector.parameters():
+            p.requires_grad = True
+
+    model_args.num_new_tokens = 4
+    model.initialize_vision_tokenizer(model_args, tokenizer)
 
     if model_args.pretrain_mllm:
         ckpt = torch.load(model_args.pretrain_mllm, map_location="cpu")
@@ -393,6 +361,7 @@ def main():
 
         model.print_trainable_parameters()
 
+
     # ckpt = torch.load("PATH", map_location="cpu")
     # model.load_state_dict(ckpt, strict=True)
 
@@ -400,11 +369,11 @@ def main():
     data_args.max_length = training_args.model_max_length
     data_args.proj_out_num = model.get_model().mm_projector.proj_out_num
     rank0_print("vision tokens output from projector: ", data_args.proj_out_num)
-    data_args.seg_enable = hasattr(model.get_model(), "seg_module")
 
     max_length=data_args.max_length
     image_tokens_num=data_args.proj_out_num
-    
+    # train_dataset = CapDataset(data_args, tokenizer, mode='train')
+    # eval_dataset = CapDataset(data_args, tokenizer, mode='validation')
     train_dataset = FusedDataset(data_args.train_base_path, data_args.train_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training", enable_linear_3d_tokenizer=model_args.enable_linear_3d_tokenizer)
     eval_dataset = FusedDataset(data_args.val_base_path, data_args.val_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="valuation", enable_linear_3d_tokenizer=model_args.enable_linear_3d_tokenizer)
     data_collator = DataCollator()

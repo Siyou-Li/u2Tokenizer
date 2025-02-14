@@ -48,7 +48,7 @@ class MRGDataset(Dataset, Randomizable):
             raise ValueError("Invalid categorize value. Must be one of ['chest', 'abdomen', 'pelvis']")
         self.categorize = categorize
         if data_type not in ["training", "validation", "testing"]:
-            raise ValueError("Invalid data_type value. Must be one of ['train', 'validation', 'test']")
+            raise ValueError("Invalid data_type value. Must be one of ['training', 'validation', 'testing']")
         self.data_type = data_type
         self.annotations = self.load_annotations(json_path)
         self.set_random_state(seed=get_seed())
@@ -97,9 +97,14 @@ class MRGDataset(Dataset, Randomizable):
         self._seed = self.R.randint(MAX_SEED, dtype="uint32")
     
     def load_annotations(self, json_path):
+        data = []
         with open(json_path, 'r') as f:
-            annotations = json.load(f)
-        return annotations[self.data_type]
+            for line in f:
+                try:
+                    data.append(json.loads(line))
+                except json.JSONDecodeError:
+                    print("Error loading json line: ", line)
+        return data
 
     def truncate_text(self, input_text, max_tokens):
         def count_tokens(text):
@@ -136,7 +141,7 @@ class MRGDataset(Dataset, Randomizable):
         annotation = self.annotations[idx]
         image_name = annotation['image']
         prompt_question = annotation["question"]
-        image_path = self.image_dir + image_name
+        image_path = os.path.join(self.image_dir, image_name)
         if not os.path.exists(image_path):
             print(f"Image file not found: {image_path}")
             return None

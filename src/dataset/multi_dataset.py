@@ -212,7 +212,10 @@ class CapDataset(Dataset):
                 )
 
                 question_len = torch.sum(question_tensor["attention_mask"][0])
-
+                
+                question_ids = self.tokenizer(
+                    prompt_question, add_special_tokens=False, max_length=self.max_length, truncation=True, padding="max_length", return_tensors="pt", padding_side="right"
+                )["input_ids"][0]
                 label = input_id.clone()
                 label[:question_len] = -100
                 if self.tokenizer.pad_token_id == self.tokenizer.eos_token_id:
@@ -228,6 +231,7 @@ class CapDataset(Dataset):
                     'label': label,
                     'attention_mask': attention_mask,
                     'question': question,
+                    'question_ids': question_ids,
                     'answer': answer,
                     'question_type': "Caption",
                 }
