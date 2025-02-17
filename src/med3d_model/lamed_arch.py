@@ -16,6 +16,7 @@ class LamedMetaModel:
         if hasattr(config, "vision_tower"):
             self.vision_tower = build_vision_tower(config)
             self.mm_projector = build_mm_projector(config)
+            # self.linear3d_tokenizer = build_linear3dtokenizer_tower(config)
 
     def get_linear3d_tokenizer(self):
         linear3d_tokenizer = getattr(self, 'linear3d_tokenizer', None)

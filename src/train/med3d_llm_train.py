@@ -70,8 +70,8 @@ class ModelArguments:
 
     # linear 3d tokenizer config
     enable_linear_3d_tokenizer: bool = False
-    l3dt_num_heads: int = 8
-    l3dt_num_layers: int = 4
+    l3dt_num_heads: int = 16
+    l3dt_num_layers: int = 8
     l3dt_top_k: int = 1024
     use_multi_scale: bool = True
     num_3d_query_token: int = 256
@@ -217,7 +217,7 @@ def find_all_linear_names(model):
     cls = torch.nn.Linear
     lora_module_names = set()
     # Process of elimination: LoRA only targets on LLM backbone
-    ignore_keywords = ['vision_tower', 'mm_projector', 'embed_tokens', 'lm_head', 'seg_projector', 'seg_module']
+    ignore_keywords = ['vision_tower', 'mm_projector', 'embed_tokens', 'lm_head', 'seg_projector', 'seg_module', 'linear3d_tokenizer']
     for name, module in model.named_modules():
         if any(mm_keyword in name for mm_keyword in ignore_keywords):
             continue
@@ -355,7 +355,7 @@ def main():
 
         for n, p in model.named_parameters():
             if any(
-                    [x in n for x in ['vision_tower', 'mm_projector', 'embed_tokens', 'lm_head', 'seg_projector', 'seg_module']]
+                    [x in n for x in ['vision_tower', 'mm_projector', 'embed_tokens', 'lm_head', 'seg_projector', 'seg_module', 'linear3d_tokenizer']]
             ):
                 p.requires_grad = True
 

@@ -3,9 +3,9 @@
 # run "accelerate config" first!
 export WANDB_API_KEY=00da6485031077ad0ca743ecf911ade54986ffaa
 export PROJECT_PATH=/import/c4dm-04/siyoul/Med3DLLM
-export CHECKPOINT_NAME=amosmm_chatgpt_phi2_l3dt_lora_0214@bs1_acc1_ep16_lr2e5_ws3_fused
+export CHECKPOINT_NAME=amosmm_chatgpt_phi2_l3dt_lora_0217@bs1_acc1_ep16_lr2e5_ws4_fused
 
-CUDA_VISIBLE_DEVICES=1,2,3 accelerate launch --config_file $PROJECT_PATH/config/accelerate_config.yaml\
+CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch --config_file $PROJECT_PATH/config/accelerate_config.yaml\
     --main_process_port 29501 \
     src/train/med3d_llm_train.py \
     --version v0 \
@@ -22,7 +22,7 @@ CUDA_VISIBLE_DEVICES=1,2,3 accelerate launch --config_file $PROJECT_PATH/config/
     --val_base_path $PROJECT_PATH/datasets \
     --val_jsonl_path $PROJECT_PATH/datasets/Fused_Dataset/val/amos_mm_findings.jsonl \
     --output_dir $PROJECT_PATH/checkpoint/$CHECKPOINT_NAME \
-    --num_train_epochs 8 \
+    --num_train_epochs 16 \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 1 \
     --gradient_accumulation_steps 1 \

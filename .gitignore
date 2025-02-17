@@ -8,3 +8,7 @@ pretrained_models
 /output/
 config/
 .vscode/
+config/accelerate_config.yaml
+config/ds_config_zero3.json
+config/ds_config.json
+config/project.json
