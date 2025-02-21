@@ -13,9 +13,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from config import config
 import textwrap
 import time
+from peft import LoraConfig, get_peft_model
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 device = "cuda"
 
 def find_all_linear_names(model):
@@ -33,19 +34,18 @@ class LlamedModel:
     def __init__(self, model_path: str, lora_weight_path: str = None):
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_path,
-            model_max_length=768,
+            model_max_length=512,
             padding_side="right",
             use_fast=False,
-            pad_token="<|endoftext|>",
             trust_remote_code=True
         )
 
         lamed_model = AutoModelForCausalLM.from_pretrained(
             model_path,
             trust_remote_code=True,
+            device_map='auto',
         )
         if lora_weight_path:
-            from peft import LoraConfig, get_peft_model
             lora_config = LoraConfig(
                 r=16,
                 lora_alpha=32,
@@ -61,8 +61,7 @@ class LlamedModel:
             lamed_model.load_state_dict(state_dict, strict=True)
             print("Merge weights with LoRA")
             lamed_model = lamed_model.merge_and_unload()
-        
-        self.model = lamed_model.to(device).eval()
+        self.model = lamed_model.eval()
 
     def inference(self, image, question, temperature=1.0, top_p=0.9):
         input_id = self.tokenizer(
@@ -148,8 +147,8 @@ def generate_predictions(dataloader, lamed_model):
     return gt_report, pred_report
 
 def evaluate():
-    lamed_model_path = config["project_path"] + "/checkpoint/checkpoint-18000"
-    lora_weight_path = None
+    lamed_model_path = config["project_path"] + "/../amosmm_chatgpt_stage_1/checkpoint-100080/"
+    lora_weight_path = config["project_path"] + "/../amosmm_chatgpt_stage_1/checkpoint-100080/model_with_lora.bin"
     llamed_model = LlamedModel(lamed_model_path, lora_weight_path)
 
     val_base_path = config["project_path"] + '/datasets'
@@ -160,7 +159,8 @@ def evaluate():
         llamed_model.tokenizer, 
         max_length=2048, 
         image_tokens_num=256, 
-        data_type="valuation"
+        data_type="valuation",
+        enable_linear_3d_tokenizer=True,
     )
 
     def collate_fn(batch):

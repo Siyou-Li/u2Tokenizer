@@ -14,7 +14,7 @@ from openai import OpenAI
 from config import config
 
 # Import necessary functions (ensure these are available in your environment)
-from green_score.utils import (
+from green_refactored.utils import (
     make_prompt,
     clean_responses,
     compute_largest_cluster,

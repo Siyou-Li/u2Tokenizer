@@ -13,7 +13,7 @@ import backoff
 
 model_name= config["openai_server"]["model_name"]
 client = OpenAI(
-    # base_url=config["openai_server"]["base_url"],
+    base_url=config["openai_server"]["base_url"],
     api_key=config["openai_server"]["api_key"],
 )
 # print(client)
@@ -33,7 +33,7 @@ Here are some examples of CT reports:
 Please fix the findings and impression into one sentence.
 
 The original CT report is:
-"{raw_text}"
+"{}"
 """.strip()
 
 QA_PRIMPT = """
@@ -50,12 +50,11 @@ The original CT report is:
 """.strip()
 
 @backoff.on_exception(backoff.expo, openai.RateLimitError)
-def rewrite(raw_text):
-    
+def rewrite(raw_text, prompt = REWRITE_PROMPT):
     response = client.chat.completions.create(model=model_name, messages=[
         {
             'role': 'user',
-            'content': REWRITE_PROMPT.format(raw_text=raw_text),
+            'content': prompt.format(raw_text),
         },
     ]).choices[0].message.content
     return response
