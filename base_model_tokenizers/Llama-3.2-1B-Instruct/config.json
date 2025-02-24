@@ -13,6 +13,12 @@
     16,
     16
   ],
+  "enable_linear_3d_tokenizer": true,
+  "l3dt_num_heads": 8,
+  "l3dt_num_layers": 4,
+  "l3dt_top_k": 1024,
+  "use_multi_scale": true,
+  "num_3d_query_token":256,
   "proj_layer_num": 2,
   "proj_layer_type": "mlp",
   "proj_pooling_size": 2,

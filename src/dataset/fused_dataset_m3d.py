@@ -18,7 +18,7 @@ from src.utils.linear_3d_transform import Linear3DTransform
 class FusedDataset(Dataset, Randomizable):
     def __init__(
             self, base_path, jsonl_path, tokenizer, max_length,\
-            image_tokens_num=1024, data_type="training", enable_linear_3d_tokenizer=True
+            image_tokens_num=1024, data_type="training", enable_linear_3d_tokenizer=True, local_rank=-1
             ):
         self.base_path = base_path
         self.tokenizer = tokenizer
@@ -28,7 +28,10 @@ class FusedDataset(Dataset, Randomizable):
         self.annotations = self.load_annotations(os.path.join(base_path, jsonl_path))
         self.set_random_state(seed=get_seed())
         self._seed = 0  # transform synchronization seed
-
+        if local_rank != -1:
+            self.device = torch.device("cuda:{}".format(local_rank))
+        else:
+            self.device = "cpu"
         if self.data_type == "training" or self.data_type == "train":
             if enable_linear_3d_tokenizer:
                 self.image_transforms = Linear3DTransform(mode='bilinear', data_type="training")
@@ -111,7 +114,7 @@ class FusedDataset(Dataset, Randomizable):
 
         question =  self.image_tokens + prompt_question
         text_tensor = self.tokenizer(
-            question + ' ' + answer, add_special_tokens=False, max_length=self.max_length, truncation=True, padding="max_length", return_tensors="pt", padding_side="right"
+            str(question) + ' ' + str(answer), add_special_tokens=False, max_length=self.max_length, truncation=True, padding="max_length", return_tensors="pt", padding_side="right"
         )
 
         input_id = text_tensor["input_ids"][0]

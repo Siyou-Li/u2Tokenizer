@@ -70,8 +70,8 @@ class ModelArguments:
 
     # linear 3d tokenizer config
     enable_linear_3d_tokenizer: bool = False
-    l3dt_num_heads: int = 16
-    l3dt_num_layers: int = 8
+    l3dt_num_heads: int = 8
+    l3dt_num_layers: int = 4
     l3dt_top_k: int = 1024
     use_multi_scale: bool = True
     num_3d_query_token: int = 256
@@ -374,8 +374,8 @@ def main():
     image_tokens_num=data_args.proj_out_num
     # train_dataset = CapDataset(data_args, tokenizer, mode='train')
     # eval_dataset = CapDataset(data_args, tokenizer, mode='validation')
-    train_dataset = FusedDataset(data_args.train_base_path, data_args.train_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training", enable_linear_3d_tokenizer=model_args.enable_linear_3d_tokenizer)
-    eval_dataset = FusedDataset(data_args.val_base_path, data_args.val_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="valuation", enable_linear_3d_tokenizer=model_args.enable_linear_3d_tokenizer)
+    train_dataset = FusedDataset(data_args.train_base_path, data_args.train_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training", enable_linear_3d_tokenizer=model_args.enable_linear_3d_tokenizer, local_rank=local_rank)
+    eval_dataset = FusedDataset(data_args.val_base_path, data_args.val_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="valuation", enable_linear_3d_tokenizer=model_args.enable_linear_3d_tokenizer, local_rank=local_rank)
     data_collator = DataCollator()
     
     rank0_print("="*20 + " Training " + "="*20)

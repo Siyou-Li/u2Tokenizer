@@ -27,7 +27,7 @@ from config import config
 
 base_path = config["project_path"]
 class Linear3DTransform:
-    def __init__(self, mode='bilinear', data_type="validation"):
+    def __init__(self, mode='bilinear', data_type="validation", device="cpu"):
         if data_type == "training":
             transforms = Compose(
                 [
@@ -57,6 +57,7 @@ class Linear3DTransform:
         self.adaptive_transforms = transforms
         self.mode = mode
         self.save = SaveImage(separate_folder=False, output_postfix='')
+        self.device = device
 
     def adaptive_resize(self, input_path, target_image_size=256, padding_size=32*8):
         """
@@ -64,6 +65,7 @@ class Linear3DTransform:
         The minimum dimension is scaled to the target dimension, and other dimensions are scaled proportionally
         """
         data = nib.load(input_path).get_fdata().transpose(2, 0, 1)[np.newaxis, ...]
+        data = torch.tensor(data, device=self.device)
         data = self.adaptive_transforms(data)[0]
         data = torch.permute(data,(1, 2, 0))
         

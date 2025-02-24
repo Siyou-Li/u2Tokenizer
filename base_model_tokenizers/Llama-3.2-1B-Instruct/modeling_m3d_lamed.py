@@ -4,6 +4,7 @@ from transformers import LlamaConfig, LlamaModel, LlamaForCausalLM
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.generation.utils import GenerateOutput
 from .configuration_m3d_lamed import LamedConfig
+from .linear_3d_tokenizer import build_linear3dtokenizer_tower
 from abc import ABC, abstractmethod
 from torch import Tensor
 import math
@@ -1409,23 +1410,6 @@ class SegVol(nn.Module):
 
         return logits
 
-
-def build_segmentation_module(config, **kwargs):
-    segmentation_module = getattr(config, 'segmentation_module')
-    if 'segvol' in segmentation_module.lower():
-        sam_model = sam_model_registry['vit'](args=config, checkpoint=None)
-        seg_model = SegVol(
-            image_encoder=sam_model.image_encoder,
-            mask_decoder=sam_model.mask_decoder,
-            prompt_encoder=sam_model.prompt_encoder,
-            roi_size=config.image_size,
-            patch_size=config.patch_size,
-        )
-        return seg_model
-    else:
-        raise ValueError(f'Unknown segmentation module: {segmentation_module}')
-
-
 class IdentityMap(nn.Module):
     def __init__(self):
         super().__init__()
@@ -1736,27 +1720,17 @@ class LamedMetaModel:
         super(LamedMetaModel, self).__init__(config)
 
         self.config = config
-        self.seg_enable = False
         #self.unet3d_header = Conv3DHead()
 
         if hasattr(config, "vision_tower"):
             self.vision_tower = build_vision_tower(config)
             self.mm_projector = build_mm_projector(config)
+            self.linear3d_tokenizer = build_linear3dtokenizer_tower(config)
 
-        if hasattr(config, "segmentation_module") and config.segmentation_module is not None:
-            self.seg_enable = True
-            #self.seg_module = build_segmentation_module(config)
-
-            self.seg_projector = nn.Sequential(
-                nn.Linear(config.hidden_size, config.hidden_size),
-                nn.ReLU(inplace=True),
-                nn.Linear(config.hidden_size, config.mm_hidden_size),
-                nn.Dropout(0.1),
-            )
-
-            self.dice_loss = BinaryDiceLoss()
-            self.bce_loss = BCELoss()
-
+    def get_linear3d_tokenizer(self):
+        linear3d_tokenizer = getattr(self, 'linear3d_tokenizer', None)
+        return linear3d_tokenizer
+    
     def get_vision_tower(self):
         vision_tower = getattr(self, 'vision_tower', None)
         return vision_tower
@@ -1776,12 +1750,21 @@ class LamedMetaModel:
         self.config.proj_pooling_type = model_args.proj_pooling_type
         self.config.proj_pooling_size = model_args.proj_pooling_size
 
+        self.config.enable_linear_3d_tokenizer = model_args.enable_linear_3d_tokenizer
+        self.config.l3dt_num_heads = model_args.l3dt_num_heads
+        self.config.l3dt_num_layers = model_args.l3dt_num_layers
+        self.config.l3dt_top_k = model_args.l3dt_top_k
+        self.config.use_multi_scale = model_args.use_multi_scale
+        self.config.num_3d_query_token = model_args.num_3d_query_token
+
         # vision tower
         #self.unet3d_header.requires_grad_(True)
         if self.get_vision_tower() is None:
             self.vision_tower = build_vision_tower(self.config)
             # If you have a more robust vision encoder, try freezing the vision tower by requires_grad_(False)
 
+        if self.get_linear3d_tokenizer() is None and model_args.enable_linear_3d_tokenizer:
+            self.linear3d_tokenizer = build_linear3dtokenizer_tower(self.config)
 
         if model_args.pretrain_vision_model is not None:
             vision_model_weights = torch.load(model_args.pretrain_vision_model, map_location='cpu')
@@ -1799,27 +1782,6 @@ class LamedMetaModel:
                 return {k.split(keyword + '.')[1]: v for k, v in weights.items() if keyword in k}
             self.mm_projector.load_state_dict(get_w(mm_projector_weights, 'mm_projector'), strict=True)
 
-    def initialize_seg_modules(self, model_args):
-        self.config.segmentation_module = model_args.segmentation_module
-
-        # segmentation_module
-        if getattr(self, 'segmentation_module', None) is None:
-            self.seg_module = build_segmentation_module(self.config)
-            self.seg_projector = nn.Sequential(
-                nn.Linear(self.config.hidden_size, self.config.hidden_size),
-                nn.ReLU(inplace=True),
-                nn.Linear(self.config.hidden_size, self.config.mm_hidden_size),
-                nn.Dropout(0.1),
-            )
-            self.seg_enable = True
-
-        if model_args.pretrain_seg_module is not None:
-            seg_module_weights = torch.load(model_args.pretrain_seg_module, map_location='cpu')
-            self.seg_module.load_state_dict(seg_module_weights, strict=True)
-
-        self.dice_loss = BinaryDiceLoss()
-        self.bce_loss = BCELoss()
-
 class LamedMetaForCausalLM(ABC):
     @abstractmethod
     def get_model(self):
@@ -1827,6 +1789,9 @@ class LamedMetaForCausalLM(ABC):
 
     def get_vision_tower(self):
         return self.get_model().get_vision_tower()
+
+    def get_linear3d_tokenizer(self):
+        return self.get_model().get_linear3d_tokenizer()
 
     def encode_images(self, images):
         #images = self.get_model().unet3d_header(images)
@@ -1836,14 +1801,23 @@ class LamedMetaForCausalLM(ABC):
 
     def prepare_inputs_for_multimodal(
         self, input_ids, position_ids, attention_mask, past_key_values, labels,
-        images,
+        images, question_ids
     ):
         vision_tower = self.get_vision_tower()
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
             return input_ids, position_ids, attention_mask, past_key_values, None, labels
         else:
-            image_features = self.encode_images(images)
+            if self.config.enable_linear_3d_tokenizer:
+                B, C, D, H, W = images.shape
+                images = images.view(B * C, 1, D, H, W)
+                image_features = self.encode_images(images)
+                v_tokens = image_features.view(B, C, image_features.shape[-2], image_features.shape[-1])
+                t_tokens = self.get_model().embed_tokens(question_ids)
+                image_features = self.get_linear3d_tokenizer()(v_token=v_tokens, t_token=t_tokens)
+            else:
+                image_features = self.encode_images(images)
             inputs_embeds = self.get_model().embed_tokens(input_ids)
+            #print(inputs_embeds.shape, image_features.shape)
             inputs_embeds = torch.cat(
                 (inputs_embeds[:, :1, :], image_features, inputs_embeds[:, (image_features.shape[1] + 1):, :]), dim=1)
         return None, position_ids, attention_mask, past_key_values, inputs_embeds, labels
@@ -1920,8 +1894,7 @@ class LamedLlamaForCausalLM(LamedMetaForCausalLM, LlamaForCausalLM):
             input_ids: torch.LongTensor = None,
             labels: Optional[torch.LongTensor] = None,
             attention_mask: Optional[torch.Tensor] = None,
-            segs: Optional[torch.FloatTensor] = None,
-
+            question_ids: Optional[torch.LongTensor] = None,
             position_ids: Optional[torch.LongTensor] = None,
             past_key_values: Optional[List[torch.FloatTensor]] = None,
             inputs_embeds: Optional[torch.FloatTensor] = None,
@@ -1932,7 +1905,6 @@ class LamedLlamaForCausalLM(LamedMetaForCausalLM, LlamaForCausalLM):
             cache_position: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
 
-        input_ids_pre = input_ids
 
         if inputs_embeds is None:
             (
@@ -1949,64 +1921,10 @@ class LamedLlamaForCausalLM(LamedMetaForCausalLM, LlamaForCausalLM):
                 past_key_values,
                 labels,
                 images,
+                question_ids
             )
 
-        try:
-            seg_ids = torch.nonzero(torch.sum(segs, dim=(1, 2, 3, 4))).flatten().tolist()
-        except:
-            seg_ids = []
-
-        if self.get_model().seg_enable and seg_ids:
-            outputs = super().forward(
-                                    input_ids=input_ids,
-                                    inputs_embeds=inputs_embeds,
-                                    attention_mask=attention_mask,
-                                    labels=labels,
-                                    output_hidden_states=True,
-
-                                    position_ids=position_ids,
-                                    past_key_values=past_key_values,
-                                    use_cache=use_cache,
-                                    output_attentions=output_attentions,
-                                    return_dict=return_dict
-                                )
-
-            output_hidden_states = outputs.hidden_states
-
-            last_hidden_state = output_hidden_states[-1]
-
-            seg_token_mask = input_ids_pre[:, 1:] == self.config.seg_token_id
-            seg_token_mask = torch.cat(
-                [
-                    seg_token_mask,
-                    torch.zeros((seg_token_mask.shape[0], 1), dtype=seg_token_mask.dtype).cuda(),
-                ],
-                dim=1,
-            )
-
-            seg_prompts = []
-            for i in seg_ids:
-                if torch.sum(seg_token_mask[i]) == 1:
-                    seg_token = last_hidden_state[i][seg_token_mask[i]]
-                    seg_prompt = self.get_model().seg_projector(seg_token)
-                elif torch.sum(seg_token_mask[i]) > 1:
-                    seg_tokens = last_hidden_state[i][seg_token_mask[i]]
-                    seg_token = torch.mean(seg_tokens, dim=0, keepdim=True)
-                    seg_prompt = self.get_model().seg_projector(seg_token)
-                else:
-                    seg_prompt = torch.zeros([1, self.config.mm_hidden_size], dtype=last_hidden_state.dtype,
-                                             device=last_hidden_state.device)
-                seg_prompts.append(seg_prompt)
-
-            seg_prompts = torch.cat(seg_prompts, dim=0)
-            logits = self.get_model().seg_module(images[seg_ids], text_emb=seg_prompts)
-            loss_dice = self.get_model().dice_loss(logits, segs[seg_ids])
-            loss_bce = self.get_model().bce_loss(logits, segs[seg_ids])
-            seg_loss = loss_dice + loss_bce
-            outputs.loss = outputs.loss + seg_loss
-            return outputs
-        else:
-            return super().forward(
+        return super().forward(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
@@ -2025,7 +1943,7 @@ class LamedLlamaForCausalLM(LamedMetaForCausalLM, LlamaForCausalLM):
         self,
         images: Optional[torch.Tensor] = None,
         inputs: Optional[torch.Tensor] = None,
-        seg_enable: bool = False,
+        question_ids: Optional[torch.FloatTensor] = None,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor, Any]:
         position_ids = kwargs.pop("position_ids", None)
@@ -2048,53 +1966,16 @@ class LamedLlamaForCausalLM(LamedMetaForCausalLM, LlamaForCausalLM):
                 None,
                 None,
                 images,
+                question_ids
             )
         else:
             inputs_embeds = self.get_model().embed_tokens(inputs)
 
-        if seg_enable:
-            outputs = super().generate(
-                inputs_embeds=inputs_embeds,
-                output_hidden_states=True,
-                return_dict_in_generate=True,
-                **kwargs
-            )
-
-            output_hidden_states = outputs.hidden_states
-            output_ids = outputs.sequences
-
-            seg_token_mask = output_ids[:, 1:] == self.config.seg_token_id
-
-            last_tensors = [tuple[-1] for tuple in output_hidden_states]
-            last_hidden_state = torch.cat(last_tensors[1:], dim=1)
-
-            seg_prompts = []
-            noseg_ids = []
-            for i in range(len(seg_token_mask)):
-                if torch.sum(seg_token_mask[i]) == 1:
-                    seg_token = last_hidden_state[i][seg_token_mask[i]]
-                    seg_prompt = self.get_model().seg_projector(seg_token)
-                elif torch.sum(seg_token_mask[i]) > 1:
-                    seg_tokens = last_hidden_state[i][seg_token_mask[i]]
-                    seg_token = torch.mean(seg_tokens, dim=0, keepdim=True)
-                    seg_prompt = self.get_model().seg_projector(seg_token)
-                else:
-                    noseg_ids.append(i)
-                    seg_prompt = torch.zeros([1, self.config.mm_hidden_size], dtype=last_hidden_state.dtype,
-                                             device=last_hidden_state.device)
-                seg_prompts.append(seg_prompt)
-
-            seg_prompts = torch.cat(seg_prompts, dim=0)
-            logits = self.get_model().seg_module(images, seg_prompts)
-            logits[noseg_ids] = -torch.inf
-
-            return output_ids, logits
-        else:
-            output_ids = super().generate(
-                inputs_embeds=inputs_embeds,
-                **kwargs
-            )
-            return output_ids
+        output_ids = super().generate(
+            inputs_embeds=inputs_embeds,
+            **kwargs
+        )
+        return output_ids
 
 
     def prepare_inputs_for_generation(self, input_ids, past_key_values=None,

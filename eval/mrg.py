@@ -30,12 +30,12 @@ def find_all_linear_names(model):
 
 class LlamedModel:
     def __init__(self, model_path: str, lora_weight_path: str = None):
-        self.tokenizer = AutoTokenizer.from_pretrained(
+        self.tokenizer =  AutoTokenizer.from_pretrained(
             model_path,
-            model_max_length=768,
-            padding_side="right",
+            model_max_length=1024,
+            padding_side="left",
             use_fast=False,
-            pad_token="<|endoftext|>",
+            pad_token="<unk>",
             trust_remote_code=True
         )
 
@@ -65,60 +65,16 @@ class LlamedModel:
 
     def inference(self, image, question, temperature=1.0, top_p=0.9):
 
+        image_tokens = "<im_patch>" * 256
+        input_txt = image_tokens + question
         input_id = self.tokenizer(
-            question, add_special_tokens=False, max_length=768, truncation=True, padding="max_length", return_tensors="pt", padding_side="right",
+            input_txt, add_special_tokens=False, max_length=1024, truncation=True, padding="max_length", return_tensors="pt", padding_side="right",
         )['input_ids'].to(device)
-
-        generation = self.model.generate(image.to(device), input_id, seg_enable=False, max_new_tokens=768,
+        question_ids = self.tokenizer(question_ids, add_special_tokens=False, max_length=1024, truncation=True, padding="max_length", return_tensors="pt", padding_side="right")['input_ids']
+        generation = self.model.generate(image.to(device), input_id, question_ids=question_ids, max_new_tokens=768,
                                             do_sample=True, top_p=top_p, temperature=temperature)
 
         return self.tokenizer.batch_decode(generation, skip_special_tokens=True)[0]
-
-class AnswerValidator:
-    def __init__(self, model_path: str):
-        self.model = AutoModelForCausalLM.from_pretrained(model_path).to(device).eval()
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-
-        EXAMPLE = textwrap.dedent("""\
-            Quention: Can you provide a diagnosis based on the fingings in chest in this image?
-            Answer: Both sides of the chest are symmetrical.
-                Scattered point-like translucence are seen in both lungs, and a few patchy high-density foci are seen in the low lobe of left lung.
-                No other abnormal are seen in the lungs. The trachea and bronchi are unobstructed.
-                The mediastinum and trachea are centered, and multiple slightly enlarged lymph nodes with higher density are seen in the mediastinum and bilateral pulmonary hila.
-                The pleura is normal. The morphology and size of the heart and great vessels are normal, with a small amount of fluid in the pericardium.
-                A high-density shadow is seen in the upper part of the esophagus. No obvious abnormal enhancement is seen in the chest.
-            """)
-        self.SYSTEM_PROMPT = textwrap.dedent("""\
-            You are the Radiation LLM answer checker, please identify invalid answers (e.g. duplicate/meaningless/unrelated output)
-
-            This is an example:
-            {example}.
-            
-            If answers are checked by Yes otherwise No, do not output any other characters other than that.
-            """).format(example=EXAMPLE)
-
-    def validate(self, question: str, answer: str) -> bool:
-        messages = [
-            {"role": "system", "content": self.SYSTEM_PROMPT},
-            {"role": "user", "content": f"Quention: {question} Answer: {answer}"}
-        ]
-        text = self.tokenizer.apply_chat_template(         
-            messages,
-            tokenize=False,
-            add_generation_prompt=True
-        )
-        model_inputs = self.tokenizer([text], return_tensors="pt").to(self.model.device)
-
-        generated_ids = self.model.generate(
-            **model_inputs,
-            max_new_tokens=10,
-        )
-        generated_ids = [
-            output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
-        ]
-
-        response = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
-        return "Yes" in response
 
 def check_character_and_length(answer):
     for ch in answer:
@@ -155,7 +111,7 @@ def mrg_annotation(dataloader, lamed_model):
     return mean
     
 if __name__ == "__main__":
-    lamed_model_path = config["project_path"] + "/checkpoint/amosmm_chatgpt_phi2_0210@bs2_acc1_ep16_lr2e5_ws2_fused/checkpoint-132000"
+    lamed_model_path = config["project_path"] + "/checkpoint/amosmm_chatgpt_llama3.2_1b_l3dt_lora_0217@bs1_acc1_ep16_lr2e5_ws4_fused/checkpoint-18000"
     lora_weight_path = None
     llamed_model = LlamedModel(lamed_model_path, lora_weight_path)
 

@@ -97,14 +97,9 @@ class MRGDataset(Dataset, Randomizable):
         self._seed = self.R.randint(MAX_SEED, dtype="uint32")
     
     def load_annotations(self, json_path):
-        data = []
         with open(json_path, 'r') as f:
-            for line in f:
-                try:
-                    data.append(json.loads(line))
-                except json.JSONDecodeError:
-                    print("Error loading json line: ", line)
-        return data
+            annotations = json.load(f)
+        return annotations[self.data_type]
 
     def truncate_text(self, input_text, max_tokens):
         def count_tokens(text):
@@ -139,8 +134,8 @@ class MRGDataset(Dataset, Randomizable):
 
     def __getitem__(self, idx):
         annotation = self.annotations[idx]
-        image_name = annotation['image']
-        prompt_question = annotation["question"]
+        image_name = os.path.join(self.image_dir, annotation['image'])
+        prompt_question = f"please provide a detailed caption outlining the fingings in {self.categorize[1]} of this image."
         image_path = os.path.join(self.image_dir, image_name)
         if not os.path.exists(image_path):
             print(f"Image file not found: {image_path}")
@@ -148,7 +143,7 @@ class MRGDataset(Dataset, Randomizable):
         image = self.image_transforms(image_path)
         # image = image.permute(0, 3, 1, 2)
         # answer = annotation['labels']['report'][self.categorize[0]][self.categorize[1]]
-        answer = annotation["answer"]
+        answer = annotation["labels"]["report"]["findings"][self.categorize[1]]
         if answer == "":
             return self.__getitem__(random.randint(0, len(self.annotations) - 1))
         # prompt_question = random.choice(self.caption_prompts).format("{} in {}".format(self.categorize[0],self.categorize[1]))
