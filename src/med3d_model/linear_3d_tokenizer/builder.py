@@ -8,5 +8,6 @@ def build_linear3dtokenizer_tower(config, **kwargs):
         top_k=config.l3dt_top_k,
         use_multi_scale=config.use_multi_scale,
         num_3d_query_token=config.num_3d_query_token,
-        hidden_size=config.hidden_size
+        hidden_size=config.hidden_size,
+        enable_mu=config.enable_mu
     )

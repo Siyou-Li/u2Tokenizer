@@ -75,6 +75,7 @@ class ModelArguments:
     l3dt_top_k: int = 1024
     use_multi_scale: bool = True
     num_3d_query_token: int = 256
+    enable_mu: bool = False
 
 @dataclass
 class DataArguments:

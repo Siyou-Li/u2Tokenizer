@@ -47,6 +47,7 @@ class LamedMetaModel:
         self.config.l3dt_top_k = model_args.l3dt_top_k
         self.config.use_multi_scale = model_args.use_multi_scale
         self.config.num_3d_query_token = model_args.num_3d_query_token
+        self.config.enable_mu = model_args.enable_mu
 
         # vision tower
         if self.get_vision_tower() is None:
