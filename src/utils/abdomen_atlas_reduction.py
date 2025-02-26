@@ -14,6 +14,7 @@ from monai.transforms import (
 from monai.transforms.spatial.functional import resize
 import os
 import shutil
+from tqdm import tqdm
 #from config import config
 
 base_path = "/import/c4dm-04/siyoul/Med3DLLM"
@@ -28,16 +29,20 @@ class NlfTIUtils:
         self.mode = mode
         
         self.save = SaveImage(separate_folder=False, output_postfix='')
-    def NlfTI_adaptive_resize(self, input_path, output_path, target_size=[256, 256, 256]):
+    def NlfTI_adaptive_resize(self, input_path, output_path, temp_name, target_size=[256, 256, 256]):
         """
         adaptive resize the NIfTI file to the target size.
         The minimum dimension is scaled to the target dimension, and other dimensions are scaled proportionally
         """
+        input_path = shutil.move(input_path, os.path.join(base_path,"datasets", temp_name))
         data = self.adaptive_transforms(input_path)
         input_shape = data.shape
         ratio = max([target_size[i] / input_shape[i] for i in range(2)])
         if ratio >= 1:
             print(f"Skip {input_path}")
+            shutil.move(
+                os.path.join(base_path,"datasets", temp_name), output_path
+                )
             return
         target_shape = [int(input_shape[i] * ratio) for i in range(3)]
         data = resize(
@@ -52,9 +57,9 @@ class NlfTIUtils:
             lazy=False,
             transform_info=None,
             )
-        self.save(data[0], output_path)
+        self.save(data[0])
         shutil.move(
-            os.path.join(base_path,"datasets", os.path.basename(output_path)), output_path
+            os.path.join(base_path,"datasets", temp_name), output_path
             )
 
 def array_split(raw_list:list, split_num:int)->list:
@@ -77,18 +82,20 @@ if __name__ == "__main__":
     num_workers = 16
     def worker(work_id, sub_image_dir, image_dir=image_dir):
         nifti_utils = NlfTIUtils()
-        for sub_dir in sub_image_dir:
+        num = 0
+        for sub_dir in tqdm(sub_image_dir):
             for file in os.listdir(os.path.join(image_dir, sub_dir)):
                 if not file.endswith(".nii.gz"):
                     continue
                 path = os.path.join(image_dir, sub_dir, file)
                 print(f"worker-{work_id} Processing {path}")
                 try:
-                    nifti_utils.NlfTI_adaptive_resize(path, path)
+                    nifti_utils.NlfTI_adaptive_resize(path, path, temp_name=f"{sub_dir}_{file}.nii.gz")
                 except Exception as e:
                     print(e)
                     print(path)
                     continue
+                num += 1
     # split the image dir
     sub_image_dirs = array_split(os.listdir(image_dir), num_workers)
     print("Number of image dirs:", len(os.listdir(image_dir)))

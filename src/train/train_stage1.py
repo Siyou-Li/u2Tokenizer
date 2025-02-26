@@ -270,18 +270,6 @@ def main():
         use_fast=False,
     )
 
-    # Define and add special tokens
-    # special_token = {"additional_special_tokens": ["<im_patch>", "<bx_start>", "<bx_end>"]}
-    # tokenizer.add_special_tokens(
-    #     special_token
-    # )
-
-    if tokenizer.unk_token is not None and tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.unk_token
-    if 'llama3' in model_args.model_type:
-        tokenizer.eos_token_id = 128001
-        tokenizer.pad_token = tokenizer.eos_token
-
     # Convert special tokens to token IDs and set related arguments
     model_args.img_token_id = tokenizer.convert_tokens_to_ids("<im_patch>")
     model_args.vocab_size = len(tokenizer)

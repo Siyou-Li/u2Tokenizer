@@ -34,12 +34,19 @@ class RelativeMultiheadAttention(nn.Module):
             nn.init.zeros_(self.dense.bias)
         nn.init.zeros_(self.relative_bias)
 
+    # Add this method to support _reset_parameters calls
+    def _reset_parameters(self):
+        self.init_weights()
+
     def split_heads(self, x, batch_size):
         # x shape: (batch_size, seq_len, d_model)
         x = x.view(batch_size, -1, self.num_heads, self.depth)  # (B, seq_len, num_heads, depth)
         return x.permute(0, 2, 1, 3)  # (B, num_heads, seq_len, depth)
 
-    def forward(self, query, key, value, is_compress=False, return_attn=False):
+    def forward(self, query, key, value, is_compress=False, return_attn=True, **kwargs):
+        # Map 'need_weights' to 'return_attn' if provided.
+        if 'need_weights' in kwargs:
+            return_attn = kwargs.pop('need_weights')
         batch_size, seq_len, _ = query.size()
 
         query = self.wq(query)
