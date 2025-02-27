@@ -4,13 +4,17 @@ import torch
 import numpy as np
 from src.train.dpo_trainer import Mu2DPOTrainer
 from trl.trainer.utils import pad
+from trl.trainer.dpo_config import DPOConfig
 from dataclasses import dataclass, field
 from src.dataset.fused_dataset_dpo import FusedDataset
 from transformers.data.data_collator import DataCollatorMixin
 import transformers
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import wandb
+from datasets import Dataset
+from src.utils.linear_3d_transform import Linear3DTransform
 
+image_transforms = Linear3DTransform(mode='bilinear', data_type="training")
 def rank0_print(*args):
     if local_rank == 0:
         print(*args)
@@ -26,6 +30,9 @@ class ModelArguments:
     wandb_project_name: Optional[str] = field(default="AMOS-MM", metadata={"help": "wandb project name"})
     wandb_run_name: Optional[str] = field(default="test", metadata={"help": "wandb run name"})
 
+    enable_linear_3d_tokenizer: Optional[bool] = field(default=False, metadata={"help": "Enable linear 3d tokenizer."})
+    model_init_kwargs = None
+
 @dataclass
 class DataArguments:
     train_jsonl_path: str = field(default="", metadata={"help": "Path to caption data."})
@@ -34,7 +41,7 @@ class DataArguments:
     val_base_path: str = field(default="", metadata={"help": "Path to image data."})
 
 @dataclass
-class TrainingArguments(transformers.TrainingArguments):
+class TrainingArguments(DPOConfig):
 
     cache_dir: Optional[str] = field(default=None)
     remove_unused_columns: bool = field(default=False)
@@ -65,63 +72,22 @@ class TrainingArguments(transformers.TrainingArguments):
     save_total_limit: int = 2
     learning_rate: float = 1e-4
     weight_decay: float = 0.
-    warmup_ratio: float = 0.03
+    warmup_num_steps: int = 100
     lr_scheduler_type: str = "cosine"
     logging_steps: float = 10 # 0.001
     gradient_checkpointing: bool = False # train fast
     dataloader_pin_memory: bool = False # fast
     dataloader_num_workers: int = 2
     report_to: str = "tensorboard"
+    beta: float = 0.1
+    model_init_kwargs = None
+    ref_model_init_kwargs = None
+    
 
-@dataclass
-class DataCollator:
-    def __init__(self, seg_enable=False):
-        self.seg_enable = seg_enable
-    def __call__(self, batch: list) -> dict:
-        images, image_path, question_ids, input_id, input_attention_mask, chosen_ids, chosen_label, chosen_attention_mask, rejected_ids, rejected_label, rejected_attention_mask = tuple(
-            [b[key] for b in batch] for key in ('image',\
-                                                'image_path',\
-                                                'question_ids',\
-                                                'input_id',\
-                                                'input_attention_mask',\
-                                                'chosen_ids',\
-                                                'chosen_label',\
-                                                'chosen_attention_mask',\
-                                                'rejected_ids',\
-                                                'rejected_label',\
-                                                'rejected_attention_mask'\
-                                                ))
-
-        images = torch.cat([_.unsqueeze(0) for _ in images], dim=0)
-        image_path = torch.cat([_.unsqueeze(0) for _ in image_path], dim=0)
-        question_ids = torch.cat([_.unsqueeze(0) for _ in question_ids], dim=0)
-        input_id = torch.cat([_.unsqueeze(0) for _ in input_id], dim=0)
-        input_attention_mask = torch.cat([_.unsqueeze(0) for _ in input_attention_mask], dim=0)
-        chosen_ids = torch.cat([_.unsqueeze(0) for _ in chosen_ids], dim=0)
-        chosen_label = torch.cat([_.unsqueeze(0) for _ in chosen_label], dim=0)
-        chosen_attention_mask = torch.cat([_.unsqueeze(0) for _ in chosen_attention_mask], dim=0)
-        rejected_ids = torch.cat([_.unsqueeze(0) for _ in rejected_ids], dim=0)
-        rejected_label = torch.cat([_.unsqueeze(0) for _ in rejected_label], dim=0)
-        rejected_attention_mask = torch.cat([_.unsqueeze(0) for _ in rejected_attention_mask], dim=0)
-
-        return_dict = dict(
-            images=images,
-            image_path=image_path,
-            question_ids=question_ids,
-            input_id=input_id,
-            input_attention_mask=input_attention_mask,
-            chosen_ids=chosen_ids,
-            chosen_label=chosen_label,
-            chosen_attention_mask=chosen_attention_mask,
-            rejected_ids=rejected_ids,
-            rejected_label=rejected_label,
-            rejected_attention_mask=rejected_attention_mask
-        )
-        return return_dict
 @dataclass
 class DataCollatorForPreference(DataCollatorMixin):
 
-    pad_token_id: int
+    pad_token_id: int = 128015
     return_tensors: str = "pt"
 
     def torch_call(self, examples: list[Union[list[int], Any, dict[str, Any]]]) -> dict[str, Any]:
@@ -132,11 +98,11 @@ class DataCollatorForPreference(DataCollatorMixin):
         chosen_attention_mask = [torch.ones_like(input_ids) for input_ids in chosen_input_ids]
         rejected_input_ids = [torch.tensor(example["rejected_input_ids"]) for example in examples]
         rejected_attention_mask = [torch.ones_like(input_ids) for input_ids in rejected_input_ids]
-
+        #print(examples)
         # Pad
         output = {}
-        output["image"] = examples["image"]
-        output["question_ids"] = examples["question_ids"]
+        output["image"] = [example["image"] for example in examples]
+        output["prompt_question_ids"] = [torch.tensor(example["prompt_question_ids"]) for example in examples]
         output["prompt_input_ids"] = pad(prompt_input_ids, padding_value=self.pad_token_id, padding_side="left")
         output["prompt_attention_mask"] = pad(prompt_attention_mask, padding_value=0, padding_side="left")
         output["chosen_input_ids"] = pad(chosen_input_ids, padding_value=self.pad_token_id)
@@ -146,6 +112,7 @@ class DataCollatorForPreference(DataCollatorMixin):
 
         return output
     
+
 
 def main():
     global local_rank
@@ -194,7 +161,15 @@ def main():
     # eval_dataset = CapDataset(data_args, tokenizer, mode='validation')
     train_dataset = FusedDataset(data_args.train_base_path, data_args.train_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training", enable_linear_3d_tokenizer=model_args.enable_linear_3d_tokenizer, local_rank=local_rank)
     eval_dataset = FusedDataset(data_args.val_base_path, data_args.val_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="valuation", enable_linear_3d_tokenizer=model_args.enable_linear_3d_tokenizer, local_rank=local_rank)
-    data_collator = DataCollator()
+    def gen_train():
+        for idx in range(len(train_dataset)):
+            yield train_dataset[idx]
+    def gen_eval():
+        for idx in range(20):
+            yield eval_dataset[idx]
+    train_dataset = Dataset.from_generator(gen_train)#, {"image": torch.float32, "question_ids": torch.int64, "prompt_input_ids": torch.int64, "chosen_input_ids": torch.int64, "rejected_input_ids": torch.int64})
+    #eval_dataset = Dataset.from_generator(gen_eval)#.generator, {"image": torch.float32, "question_ids": torch.int64, "prompt_input_ids": torch.int64, "chosen_input_ids": torch.int64, "rejected_input_ids": torch.int64})
+    data_collator = DataCollatorForPreference()
     
     rank0_print("="*20 + " Training " + "="*20)
     trainer = Mu2DPOTrainer(
@@ -203,8 +178,8 @@ def main():
                         args=training_args,
                         data_collator=data_collator,
                         train_dataset=train_dataset,
-                        eval_dataset=eval_dataset,
-                        args=training_args
+                        eval_dataset=train_dataset,
+                        processing_class=tokenizer,
                       )
     
     trainer.train()
@@ -212,7 +187,7 @@ def main():
     model.config.use_cache = True
 
     rank0_print("="*20 + " Save model " + "="*20)
-    safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
+    #safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
 
 
 if __name__ == "__main__":

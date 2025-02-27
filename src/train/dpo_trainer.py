@@ -12,12 +12,51 @@ from transformers.data.data_collator import DataCollatorMixin
 from contextlib import nullcontext
 from trl.trainer.utils import pad, pad_to_length, flush_left, selective_log_softmax
 from dataclasses import dataclass
+from accelerate.utils import is_deepspeed_available
+from trl.models import PreTrainedModelWrapper
+from copy import deepcopy
+from src.utils.linear_3d_transform import Linear3DTransform
+image_transforms = Linear3DTransform(mode='bilinear', data_type="training")
 
+if is_deepspeed_available():
+    import deepspeed
 logger = logging.get_logger(__name__)
 TRAINING_ARGS_NAME = "training_args.bin"
 
 
 class Mu2DPOTrainer(DPOTrainer):
+    def _prepare_deepspeed(self, model: PreTrainedModelWrapper):
+        # Adapted from accelerate: https://github.com/huggingface/accelerate/blob/739b135f8367becb67ffaada12fe76e3aa60fefd/src/accelerate/accelerator.py#L1473
+        deepspeed_plugin = self.accelerator.state.deepspeed_plugin
+        config_kwargs = deepcopy(deepspeed_plugin.deepspeed_config)
+
+        if model is not None:
+            if hasattr(model, "config"):
+                hidden_size = (
+                    max(model.config.hidden_sizes)
+                    if getattr(model.config, "hidden_sizes", None)
+                    else getattr(model.config, "hidden_size", None)
+                )
+                if hidden_size is not None and config_kwargs["zero_optimization"]["stage"] == 3:
+                    # Note that `stage3_prefetch_bucket_size` can produce DeepSpeed messages like: `Invalidate trace cache @ step 0: expected module 1, but got module 0`
+                    # This is expected and is not an error, see: https://github.com/microsoft/DeepSpeed/discussions/4081
+                    config_kwargs.update(
+                        {
+                            "zero_optimization.reduce_bucket_size": hidden_size * hidden_size,
+                            "zero_optimization.stage3_param_persistence_threshold": 10 * hidden_size,
+                            "zero_optimization.stage3_prefetch_bucket_size": 0.9 * hidden_size * hidden_size,
+                        }
+                    )
+
+        # If ZeRO-3 is used, we shard both the active and reference model.
+        # Otherwise, we assume the reference model fits in memory and is initialized on each device with ZeRO disabled (stage 0)
+        if config_kwargs["zero_optimization"]["stage"] != 3:
+            config_kwargs["zero_optimization"]["stage"] = 0
+        config_kwargs.pop('scheduler', None)
+        model, *_ = deepspeed.initialize(model=model, config=config_kwargs)
+        model.eval()
+        return model
+    
     def generate_from_model_and_ref(self, model, batch: dict[str, torch.LongTensor]) -> tuple[str, str]:
         """Generate samples from the model and reference model for the given batch of inputs."""
 
@@ -25,11 +64,12 @@ class Mu2DPOTrainer(DPOTrainer):
         # the torch amp context manager as some hidden states are silently casted to full precision.
         device_type = "xpu" if is_torch_xpu_available() else "cuda"
         generate_context_manager = amp.autocast(device_type) if self._peft_has_been_casted_to_bf16 else nullcontext()
-
+        images = [torch.tensor(image) for image in batch["image"]]
+        images = torch.stack(images).to(self.device)
         with generate_context_manager:
             policy_output = model.generate(
-                images=batch["image"],
-                question_ids=batch["question_ids"],
+                images=images,
+                question_ids=batch["prompt_question_ids"],
                 input_ids=batch["prompt_input_ids"],
                 attention_mask=batch["prompt_attention_mask"],
                 max_length=self.max_length,
@@ -44,8 +84,8 @@ class Mu2DPOTrainer(DPOTrainer):
                 if self.ref_model is None:
                     with self.null_ref_context():
                         ref_output = self.model.generate(
-                            images=batch["image"],
-                            question_ids=batch["question_ids"],
+                            images=images,
+                            question_ids=batch["prompt_question_ids"],
                             input_ids=batch["prompt_input_ids"],
                             attention_mask=batch["prompt_attention_mask"],
                             max_length=self.max_length,
@@ -54,8 +94,8 @@ class Mu2DPOTrainer(DPOTrainer):
                         )
                 else:
                     ref_output = self.ref_model.generate(
-                        images=batch["image"],
-                        question_ids=batch["question_ids"],
+                        images=images,
+                        question_ids=batch["prompt_question_ids"],
                         input_ids=batch["prompt_input_ids"],
                         attention_mask=batch["prompt_attention_mask"],
                         max_length=self.max_length,
@@ -71,8 +111,9 @@ class Mu2DPOTrainer(DPOTrainer):
 
         return policy_output_decoded, ref_output_decoded
     
+    @staticmethod
     def concatenated_inputs(
-        batch: dict[str, Union[list, torch.LongTensor]], padding_value: int
+        batch: dict[str, Union[list, torch.LongTensor]], padding_value: int = 128015
     ) -> dict[str, torch.LongTensor]:
         """
         Concatenate the `chosen` and `rejected` inputs from the batch into a single tensor for both the prompt
@@ -110,11 +151,18 @@ class Mu2DPOTrainer(DPOTrainer):
 
         # For the prompt, the input_ids are the same for both the chosen and rejected responses
         output["prompt_input_ids"] = torch.cat([batch["prompt_input_ids"], batch["prompt_input_ids"]], dim=0)
+        device = batch["prompt_input_ids"].device
+        data_type = batch["prompt_input_ids"].dtype
         output["prompt_attention_mask"] = torch.cat(
             [batch["prompt_attention_mask"], batch["prompt_attention_mask"]], dim=0
         )
-        output["image"] = torch.cat([batch["image"], batch["image"]], dim=0)
-        output["question_ids"] = torch.cat([batch["question_ids"], batch["question_ids"]], dim=0)
+        images = [image_transforms(image) for image in batch["image"]]
+        images = torch.stack(images)
+        output["image"] = torch.cat([images, images], dim=0).to(device, dtype=torch.bfloat16)
+        # print("Type of prompt_question_ids:", type(batch["prompt_question_ids"]))
+        # print("Contents:", batch["prompt_question_ids"])
+        batch["prompt_question_ids"] = batch["prompt_question_ids"][0].unsqueeze(0).to(device, dtype=data_type)
+        output["prompt_question_ids"] = torch.cat([batch["prompt_question_ids"], batch["prompt_question_ids"]], dim=0)
         
         # Concatenate the chosen and rejected completions
         max_completion_length = max(batch["chosen_input_ids"].shape[1], batch["rejected_input_ids"].shape[1])
@@ -139,15 +187,14 @@ class Mu2DPOTrainer(DPOTrainer):
         We do this to avoid doing two forward passes, because it's faster for FSDP.
         """
         num_examples = batch["prompt_input_ids"].shape[0]
-
-        concatenated_batch = self.concatenated_inputs(batch, padding_value=self.padding_value)
+        concatenated_batch = self.concatenated_inputs(batch)
 
         model_kwargs = {}
         if self.aux_loss_enabled:
             model_kwargs["output_router_logits"] = True
 
         images=concatenated_batch["image"]
-        question_ids=concatenated_batch["question_ids"]
+        prompt_question_ids=concatenated_batch["prompt_question_ids"]
         prompt_input_ids = concatenated_batch["prompt_input_ids"]
         prompt_attention_mask = concatenated_batch["prompt_attention_mask"]
         completion_input_ids = concatenated_batch["completion_input_ids"]
@@ -157,7 +204,7 @@ class Mu2DPOTrainer(DPOTrainer):
             labels[completion_attention_mask == 0] = self.label_pad_token_id
             outputs = model(
                 images=images,
-                question_ids=question_ids,
+                question_ids=prompt_question_ids,
                 input_ids=prompt_input_ids,
                 attention_mask=prompt_attention_mask,
                 labels=labels,  # we need the labels for the logits to be returned
@@ -218,7 +265,7 @@ class Mu2DPOTrainer(DPOTrainer):
 
             outputs = model(
                 images=images,
-                question_ids=question_ids,
+                question_ids=prompt_question_ids,
                 input_ids=input_ids, 
                 **model_kwargs
                 )

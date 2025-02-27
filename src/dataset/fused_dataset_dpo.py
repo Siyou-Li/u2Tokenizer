@@ -32,16 +32,16 @@ class FusedDataset(Dataset, Randomizable):
             self.device = torch.device("cuda:{}".format(local_rank))
         else:
             self.device = "cpu"
-        if self.data_type == "training" or self.data_type == "train":
-            if enable_linear_3d_tokenizer:
-                self.image_transforms = Linear3DTransform(mode='bilinear', data_type="training")
-            else:
-                self.image_transforms = train_transforms
-        else:
-            if enable_linear_3d_tokenizer:
-                self.image_transforms = Linear3DTransform(mode='bilinear', data_type="validation")
-            else:
-                self.image_transforms = val_transforms     
+        # if self.data_type == "training" or self.data_type == "train":
+        #     if enable_linear_3d_tokenizer:
+        #         self.image_transforms = Linear3DTransform(mode='bilinear', data_type="training")
+        #     else:
+        #         self.image_transforms = train_transforms
+        # else:
+        #     if enable_linear_3d_tokenizer:
+        #         self.image_transforms = Linear3DTransform(mode='bilinear', data_type="validation")
+        #     else:
+        #         self.image_transforms = val_transforms     
         
     def randomize(self, data):
         self._seed = self.R.randint(MAX_SEED, dtype="uint32")
@@ -94,53 +94,54 @@ class FusedDataset(Dataset, Randomizable):
         prompt_question = annotation["question"]
         chosen = annotation["chosen"]
         rejected = annotation["rejected"]
+        question =  self.image_tokens + prompt_question
         # Load image
         image_path = os.path.join(self.base_path, image_name)
-        if not os.path.exists(image_path):
-            print(f"Image file not found: {image_path}")
-            return None
-        try:
-            image = self.image_transforms(image_path)
-        except Exception as e:
-            if idx == self.__len__()-1:
-                idx = 0
-            return self.__getitem__(random.randint(0, self.__len__()-1))
+        # if not os.path.exists(image_path):
+        #     print(f"Image file not found: {image_path}")
+        #     return None
+        # try:
+        #     image = self.image_transforms(image_path)
+        # except Exception as e:
+        #     if idx == self.__len__()-1:
+        #         idx = 0
+        #     return self.__getitem__(random.randint(0, self.__len__()-1))
         
         prompt_question_ids = self.tokenizer(
             prompt_question, add_special_tokens=False, max_length=self.max_length, truncation=True, padding="max_length", return_tensors="pt", padding_side="right"
         )["input_ids"][0]
 
-        question =  self.image_tokens + prompt_question
-        text_tensor = self.tokenizer(
-            str(question), add_special_tokens=False, max_length=self.max_length, truncation=True, padding=False, return_tensors="pt", padding_side="right"
-        )
-        prompt_input_ids = text_tensor["input_ids"][0]
-        input_attention_mask = text_tensor["attention_mask"][0]
+        # 
+        # text_tensor = self.tokenizer(
+        #     str(question), add_special_tokens=False, max_length=self.max_length, truncation=True, padding=False, return_tensors="pt", padding_side="right"
+        # )
+        # prompt_input_ids = text_tensor["input_ids"][0]
+        # input_attention_mask = text_tensor["attention_mask"][0]
 
-        question_len = torch.sum(input_attention_mask)
+        # question_len = torch.sum(input_attention_mask)
         
-        chosen_tensor = self.tokenizer(
-            str(chosen), add_special_tokens=False, max_length=self.max_length, truncation=True, padding=False, return_tensors="pt", padding_side="right"
-        )
-        chosen_input_ids = chosen_tensor["input_ids"][0]
-        chosen_attention_mask = chosen_tensor["attention_mask"][0]
-        chosen_label = chosen_input_ids.clone()
-        chosen_label[0:question_len] = -100
+        # chosen_tensor = self.tokenizer(
+        #     str(chosen), add_special_tokens=False, max_length=self.max_length, truncation=True, padding=False, return_tensors="pt", padding_side="right"
+        # )
+        # chosen_input_ids = chosen_tensor["input_ids"][0]
+        # chosen_attention_mask = chosen_tensor["attention_mask"][0]
+        # chosen_label = chosen_input_ids.clone()
+        # chosen_label[0:question_len] = -100
 
-        rejected_tensor = self.tokenizer(
-            str(rejected), add_special_tokens=False, max_length=self.max_length, truncation=True, padding=False, return_tensors="pt", padding_side="right"
-        )
-        rejected_input_ids = rejected_tensor["input_ids"][0]
-        rejected_attention_mask = rejected_tensor["attention_mask"][0]
-        rejected_label = rejected_input_ids.clone()
-        rejected_label[0:question_len] = -100
+        # rejected_tensor = self.tokenizer(
+        #     str(rejected), add_special_tokens=False, max_length=self.max_length, truncation=True, padding=False, return_tensors="pt", padding_side="right"
+        # )
+        # rejected_input_ids = rejected_tensor["input_ids"][0]
+        # rejected_attention_mask = rejected_tensor["attention_mask"][0]
+        # rejected_label = rejected_input_ids.clone()
+        # rejected_label[0:question_len] = -100
 
         ret = {
-            'image': image,
-            'question_ids': prompt_question_ids,
-            'prompt_input_ids': prompt_input_ids,
-            'chosen_input_ids': chosen_input_ids,
-            'rejected_input_ids': rejected_input_ids,
+            'image': image_path,
+            'prompt_question_ids': prompt_question_ids,
+            'prompt': question,
+            'chosen': chosen,
+            'rejected': rejected,
         }
         return ret
 

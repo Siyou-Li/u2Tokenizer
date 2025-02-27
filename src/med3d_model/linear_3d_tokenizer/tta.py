@@ -68,14 +68,14 @@ class MultiHeadCrossAttention(nn.Module):
         return output
 
 class TextConditionTokenAttMap(nn.Module):
-    def __init__(self, d_model, num_heads, enable_mu=False):
+    def __init__(self, d_model, num_heads, enable_rpe=False):
         super(TextConditionTokenAttMap, self).__init__()
         self.visual_cross_attention = MultiHeadCrossAttention(d_model, num_heads)
         self.text_cross_attention = MultiHeadCrossAttention(d_model, num_heads)
         self.dropout_cross = nn.Identity()
         self.norm_cross_v = nn.LayerNorm(d_model)
         self.norm_cross_t = nn.LayerNorm(d_model)
-        if enable_mu:
+        if enable_rpe:
             self.self_attention = RelativeMultiheadAttention(d_model, num_heads)
         else:
             self.self_attention = nn.MultiheadAttention(d_model, num_heads, dropout=0.0)
@@ -113,9 +113,9 @@ class LinearAggregation(nn.Module):
         return visual_compression
 
 class TextConditionTokenAggregatorModel(nn.Module):
-    def __init__(self, d_model, num_layers, num_heads, enable_mu=False):
+    def __init__(self, d_model, num_layers, num_heads, enable_rpe=False):
         super(TextConditionTokenAggregatorModel, self).__init__()
-        self.layers_vt = nn.ModuleList([TextConditionTokenAttMap(d_model, num_heads, enable_mu) for _ in range(num_layers)])
+        self.layers_vt = nn.ModuleList([TextConditionTokenAttMap(d_model, num_heads, enable_rpe) for _ in range(num_layers)])
         self.layer_linagg = LinearAggregation(d_model, num_heads)
 
     def forward(self, query, visual_value, text_value, return_attn=False):

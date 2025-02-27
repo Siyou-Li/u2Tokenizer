@@ -9,5 +9,7 @@ def build_linear3dtokenizer_tower(config, **kwargs):
         use_multi_scale=config.use_multi_scale,
         num_3d_query_token=config.num_3d_query_token,
         hidden_size=config.hidden_size,
-        enable_mu=config.enable_mu
+        enable_rpe=config.enable_rpe,
+        enable_diffts=config.enable_diffts,
+        enable_dmtp=config.enable_dmtp,
     )

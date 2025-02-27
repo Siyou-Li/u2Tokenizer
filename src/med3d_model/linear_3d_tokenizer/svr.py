@@ -4,9 +4,9 @@ import torch.nn.functional as F
 from .rma import RelativeMultiheadAttention
 
 class SpatioTemporalAttentionLayer(nn.Module):
-    def __init__(self, embed_size, num_heads, enable_mu=False):
+    def __init__(self, embed_size, num_heads, enable_rpe=False):
         super(SpatioTemporalAttentionLayer, self).__init__()
-        if enable_mu:
+        if enable_rpe:
             self.spatial_attention = RelativeMultiheadAttention(embed_size, num_heads)
             self.temporal_attention = RelativeMultiheadAttention(embed_size, num_heads)
         else:
@@ -37,10 +37,10 @@ class SpatioTemporalAttentionLayer(nn.Module):
 
 
 class SpatioTemporalSignificanceScoring(nn.Module):
-    def __init__(self, embed_size, num_heads, num_layers, enable_mu=False):
+    def __init__(self, embed_size, num_heads, num_layers, enable_rpe=False):
         super(SpatioTemporalSignificanceScoring, self).__init__()
         self.layers = nn.ModuleList([
-            SpatioTemporalAttentionLayer(embed_size, num_heads, enable_mu) for _ in range(num_layers)
+            SpatioTemporalAttentionLayer(embed_size, num_heads, enable_rpe) for _ in range(num_layers)
         ])
 
     def forward(self, x, return_attn=False):
@@ -147,15 +147,16 @@ class DynamicMultiScalePooling(nn.Module):
         return out
     
 class SpatioTemporalVisualTokenRefinerModel(nn.Module):
-    def __init__(self, embed_size, num_heads, num_layers, top_k, use_multi_scale, enable_mu=False):
+    def __init__(self, embed_size, num_heads, num_layers, top_k, use_multi_scale, enable_rpe=False, enable_diffts=False, enable_dmtp=False):
         super(SpatioTemporalVisualTokenRefinerModel, self).__init__()
-        self.attention_network = SpatioTemporalSignificanceScoring(embed_size, num_heads, num_layers, enable_mu)
-        self.enable_mu = enable_mu
-        if self.enable_mu:
+        self.attention_network = SpatioTemporalSignificanceScoring(embed_size, num_heads, num_layers, enable_rpe)
+        if enable_diffts:
             self.token_selection = DifferentiableTokenSelection(embed_size, top_k)
-            self.dynamic_pool = DynamicMultiScalePooling(embed_size)
         else:
             self.token_selection = TokenSelection(embed_size, top_k)
+        if enable_dmtp:
+            self.dynamic_pool = DynamicMultiScalePooling(embed_size)
+        self.enable_dmtp = enable_dmtp
         self.use_multi_scale = use_multi_scale
 
     def forward(self, x, return_attn=False):
@@ -166,7 +167,7 @@ class SpatioTemporalVisualTokenRefinerModel(nn.Module):
         x = self.token_selection(x)
 
         if self.use_multi_scale:
-            if self.enable_mu:
+            if self.enable_dmtp:
                 x = self.dynamic_pool(x)
             else:
                 # Apply multi-scale pooling over the token dimension.
