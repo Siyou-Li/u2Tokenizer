@@ -110,7 +110,7 @@ class FusedDataset(Dataset, Randomizable):
         # question = "<|user|>\n" + self.image_tokens + prompt_question + "</s>\n<|assistant|>\n"
 
         question =  self.tokenizer.apply_chat_template(
-                [{"from": "human", "value": self.image_tokens + prompt_question}],
+                [{"role": "user", "content": self.image_tokens + prompt_question}],
                 tokenize=False,
                 add_generation_prompt=True,
             )
@@ -152,6 +152,7 @@ class FusedDataset(Dataset, Randomizable):
             'attention_mask': attention_mask,
             'question': question,
             'question_ids': question_ids,
+            'prompt_question': prompt_question,
             'answer': answer,
             'question_type': "Caption",
         }

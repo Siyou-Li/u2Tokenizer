@@ -2,11 +2,10 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from green_refactored import GREEN, OpenAILLM
+from green_refactored import GREEN, OpenAILLM, GREENLLM
 from transformers import AutoTokenizer, AutoModelForCausalLM
-import os
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from src.dataset.fused_dataset import FusedDataset
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -14,10 +13,15 @@ from config import config
 import textwrap
 import time
 from peft import LoraConfig, get_peft_model
+import json
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+dataset_range = range(int(sys.argv[1]), int(sys.argv[2]), 30)
+prediction_file = f"output/ct_rate_pred_{int(dataset_range[0]/100)}.jsonl"
+greened_file = f"output/ct_rate_greened_{int(dataset_range[0]/100)}.jsonl"
+
 device = "cuda"
+dtype = torch.bfloat16 # or bfloat16, float16, float32
 
 def find_all_linear_names(model):
     lora_module_names = set()
@@ -34,7 +38,7 @@ class LlamedModel:
     def __init__(self, model_path: str, lora_weight_path: str = None):
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_path,
-            model_max_length=512,
+            model_max_length=1024,
             padding_side="right",
             use_fast=False,
             trust_remote_code=True
@@ -42,8 +46,9 @@ class LlamedModel:
 
         lamed_model = AutoModelForCausalLM.from_pretrained(
             model_path,
-            trust_remote_code=True,
+            torch_dtype=dtype,
             device_map='auto',
+            trust_remote_code=True,
         )
         if lora_weight_path:
             lora_config = LoraConfig(
@@ -57,19 +62,25 @@ class LlamedModel:
             print("Adding LoRA adapters only on LLM.")
             lamed_model = get_peft_model(lamed_model, lora_config)
             print("Load weights with LoRA")
-            state_dict = torch.load(lora_weight_path, map_location=device)
+            state_dict = torch.load(lora_weight_path, map_location="cpu")
             lamed_model.load_state_dict(state_dict, strict=True)
             print("Merge weights with LoRA")
             lamed_model = lamed_model.merge_and_unload()
         self.model = lamed_model.eval()
 
     def inference(self, image, question, temperature=1.0, top_p=0.9):
-        input_id = self.tokenizer(
-            question, add_special_tokens=False, max_length=768, truncation=True, padding="max_length", return_tensors="pt", padding_side="right",
-        )['input_ids'].to(device)
+        proj_out_num = 256
+        # question = "Can you provide a diagnosis based on the findings in chest in this image?."
+        question_ids = self.tokenizer(
+                    question, add_special_tokens=False, max_length=768, truncation=True, padding="max_length", return_tensors="pt", padding_side="right"
+                )["input_ids"][0]
+        image_tokens = "<im_patch>" * proj_out_num
+        input_txt = image_tokens + question
+        input_id = self.tokenizer(input_txt, return_tensors="pt")['input_ids'].to(device=device)
 
-        generation = self.model.generate(image.to(device), input_id, seg_enable=False, max_new_tokens=768,
-                                            do_sample=True, top_p=top_p, temperature=temperature)
+        with torch.amp.autocast("cuda"):
+            generation = self.model.generate(image.to(device), input_id, question_ids.to(device), max_new_tokens=768,
+                                                do_sample=True, top_p=top_p, temperature=temperature)
 
         return self.tokenizer.batch_decode(generation, skip_special_tokens=True)[0]
 
@@ -127,62 +138,73 @@ def check_character_and_length(answer):
         return False
     return True
 
+
 def generate_predictions(dataloader, lamed_model):
-    gt_report = []
-    pred_report= []
+    results = []
 
     for batch in tqdm(dataloader):
         if batch is None:
             continue
+
         image = batch["image"]
-        question = batch["question"][0]
-        while True:
-            pred = lamed_model.inference(image, question).strip()
-            if check_character_and_length(pred):
-                break
+        image_path = batch["image_path"][0][len(dataloader.dataset.dataset.base_path)+1:]
+        question = batch["prompt_question"][0]
+        ground_truth = batch["answer"][0]
+        predictions = []
+        with open(prediction_file, "a+") as f:
+            for _ in range(8):
+                while True:
+                    pred = lamed_model.inference(image, question).strip()
+                    if check_character_and_length(pred):
+                        break
+                predictions.append(pred)
 
-        gt_report.append(batch["answer"][0])
-        pred_report.append(pred)
+            result = {
+                "image": image_path,
+                "question": question,
+                "ground_truth": ground_truth,
+                "predictions": predictions,
+            }
+            results.append(result)
 
-    return gt_report, pred_report
+            json.dump(result, f, ensure_ascii=False)
+            f.write("\n")
 
-def evaluate():
-    lamed_model_path = config["project_path"] + "/../amosmm_chatgpt_stage_1/checkpoint-100080/"
-    lora_weight_path = config["project_path"] + "/../amosmm_chatgpt_stage_1/checkpoint-100080/model_with_lora.bin"
-    llamed_model = LlamedModel(lamed_model_path, lora_weight_path)
-
-    val_base_path = config["project_path"] + '/datasets'
-    val_jsonl_path = config["project_path"] + '/datasets/Fused_Dataset/val/amos_mm_findings.jsonl'
-    dataset = FusedDataset(
-        val_base_path, 
-        val_jsonl_path, 
-        llamed_model.tokenizer, 
-        max_length=2048, 
-        image_tokens_num=256, 
-        data_type="valuation",
-        enable_linear_3d_tokenizer=True,
-    )
-
-    def collate_fn(batch):
-        batch = list(filter(lambda x: x is not None, batch))
-        if not batch:
-            return None
-        return torch.utils.data.dataloader.default_collate(batch)
-
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
-
-    gt_report, pred_report = generate_predictions(dataloader, llamed_model)
+    return results
 
 
-    # green_model_path = "/data/huanan/GREEN-RadLlama2-7b"
-    # green_model_path = "/data/huanan/GREEN-RadPhi2"
+
+def evaluate_with_green():
+    # 从 generate 的结果中，取出一个 case，将其中 8 个 answer 分别与 ground truth 一起传到 green
+    # 算出结果后取 mean 值，存起来
+    # 同时，将 8 个 answer 根据 score 从高到低排序
 
     # 有多种类型的 LLM，这里选用远程 API 调用的类型
-    llm_model = OpenAILLM("OpenAI LLM")
-    green = GREEN(llm_model)
+    # llm_model = OpenAILLM("OpenAI LLM")
+    # green = GREEN(llm_model)
 
-    mean, std, green_score_list, summary, result_df = green(refs=gt_report, hyps=pred_report)
-    print(mean, std, green_score_list, summary)
+    # mean, std, green_score_list, summary, result_df = green(refs=gt_report, hyps=pred_report)
+    # print(mean, std, green_score_list, summary)
+
+
+    llm_model = GREENLLM("../GREEN-RadPhi2/")
+    green = GREEN(llm_model, compute_summary_stats=False)
+
+    with open(prediction_file, "r") as input_file:
+        for line in input_file:
+            record = json.loads(line)
+            ground_truth = record["ground_truth"]
+            predictions = record["predictions"]
+            green_scores = {}
+            for prediction in predictions:
+                _, _, green_score_list, _, _ = green(refs=[ground_truth], hyps=[prediction])
+                green_scores[prediction] = green_score_list[0]
+            sorted_scored_predictions = sorted(green_scores.items(), key=lambda e: e[1], reverse=True)
+            record["predictions"] = [item[0] for item in sorted_scored_predictions]
+            record["prediction_scores"] = [item[1] for item in sorted_scored_predictions]
+            with open(greened_file, "a+") as output_file:
+                json.dump(record, output_file, ensure_ascii=False)
+                output_file.write("\n")
 
 def batch_task_evaluation():
     llm_model = OpenAILLM("OpenAI LLM")
@@ -223,4 +245,5 @@ def batch_task_evaluation():
     # TODO：把结果塞到 green.completions 里，再调用 green.process_results() 就能计算分汁
 
 if __name__ == "__main__":
-    evaluate()
+    # generate()
+    evaluate_with_green()

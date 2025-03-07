@@ -15,7 +15,7 @@ from config import config
 
 base_path = config["project_path"]
 csv_file_path = os.path.join(base_path, "datasets/CT-RATE/dataset/radiology_text_reports/train_reports.csv")
-output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/train/ct_rate_rewrite_raw.jsonl")
+output_file_path = os.path.join(base_path, "output/ct_rate_raw.jsonl")
 with open(csv_file_path, 'r') as f:
     raw_data = pd.read_csv(csv_file_path, low_memory=False)
 
@@ -32,15 +32,14 @@ for idx, row in tqdm(raw_data.iterrows()):
         prompt_question = random.choice(Caption_templates).format("findings")
         try:
             #ans = rewrite(findings)
-            if os.path.exists(os.path.join(base_path, "datasets/CT-RATE/dataset/train", image_path)):
-                abdomen_atlas_data.append(json.dumps({
-                    "image": os.path.join("CT-RATE/dataset/train", image_path),
-                    "dataset": "CT-RATE",
-                    "task_type": "VQA",
-                    "synthesis": True,
-                    "question": prompt_question,
-                    "answer": findings,
-                }, ensure_ascii=False))
+            abdomen_atlas_data.append(json.dumps({
+                "image": os.path.join("CT-RATE/dataset/train", image_path),
+                "dataset": "CT-RATE",
+                "task_type": "VQA",
+                "synthesis": False,
+                "question": prompt_question,
+                "answer": findings,
+            }, ensure_ascii=False))
         except Exception as e:
             print(e)
             continue

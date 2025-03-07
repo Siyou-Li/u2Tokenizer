@@ -34,14 +34,16 @@ class LLM:
         raise NotImplementedError()
 
 class GREENLLM(LLM):
-    def __init__(self, model_name):
+    def __init__(self, model_name, device="cuda"):
         super().__init__(model_name)
+
+        self.device = device
 
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             trust_remote_code=False if "Phi" in model_name else True,
             torch_dtype=torch.float16,
-        )
+        ).to(self.device)
         self.model.eval()
 
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -50,6 +52,7 @@ class GREENLLM(LLM):
             use_fast=True,
             trust_remote_code=True,
             padding_side="left",
+            device=self.device,
         )
 
         chat_template = "{% for message in messages %}\n{% if message['from'] == 'human' %}\n{{ '<|user|>\n' + message['value'] + eos_token }}\n{% elif message['from'] == 'system' %}\n{{ '<|system|>\n' + message['value'] + eos_token }}\n{% elif message['from'] == 'gpt' %}\n{{ '<|assistant|>\n'  + message['value'] + eos_token }}\n{% endif %}\n{% if loop.last and add_generation_prompt %}\n{{ '<|assistant|>' }}\n{% endif %}\n{% endfor %}"
@@ -75,7 +78,7 @@ class GREENLLM(LLM):
             padding=True,
             truncation=True,
             max_length=2048,
-        )
+        ).to(self.device)
 
         return batch
 
@@ -182,10 +185,9 @@ class OpenAILLM(LLM):
                     line = json.loads(line)
                     f.write(line["response"]["body"]["choices"][0]["message"]["content"] + "\n")
 
-
 class QuantizedLLM(LLM):
     def __init__(self, model_name):
-        super().__init__(model_name, compute_summary_stats)
+        super().__init__(model_name)
         # model_name is "/data/huanan/GREEN/quantized_model_path"
         self.model = GPTQModel.load(model_name, trust_remote_code=True)
         self.tokenizer = self.model.tokenizer

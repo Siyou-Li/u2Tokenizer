@@ -7,7 +7,7 @@
     },
     "amos_mm_dataset": {
         "origin_data_file": "datasets/AMOS-MM/dataset.json",
-        "rewrite_output_file": "output/amos_mm_rewrite.jsonl",
+        "rewrite_output_file": "output/amos_mm_raw.jsonl",
         "qa_output_file": "output/amos_mm_qa.jsonl"
     }
 }
