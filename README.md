@@ -12,7 +12,7 @@
 
 
 <p align="center">
-  <img src="./assets/Cover.svg">
+  <img src="./assets/cover.svg">
 </p>
 
 ## 🚀 Introduction
