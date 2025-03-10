@@ -1,4 +1,4 @@
 try:
-    from .language_model.lamed_llama import LamedLlamaForCausalLM, LlamaConfig
+    from .language_model.u2llama import u2LlamaForCausalLM, LlamaConfig
 except:
     pass

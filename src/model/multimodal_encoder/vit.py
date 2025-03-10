@@ -87,7 +87,6 @@ class ViT(nn.Module):
             raise ValueError("hidden_size should be divisible by num_heads.")
         self.hidden_size = hidden_size
         self.classification = classification
-        # print(f"ViT: hidden_size={hidden_size}, num_heads={num_heads}, num_layers={num_layers}, img_size={img_size}, patch_size={patch_size}")
         self.patch_embedding = PatchEmbeddingBlock(
             in_channels=in_channels,
             img_size=img_size,
@@ -113,7 +112,6 @@ class ViT(nn.Module):
             #     self.classification_head = nn.Linear(hidden_size, num_classes)  # type: ignore
 
     def forward(self, x):
-        # print(x.shape)
         x = self.patch_embedding(x)
         if hasattr(self, "cls_token"):
             cls_token = self.cls_token.expand(x.shape[0], -1, -1)
@@ -126,6 +124,10 @@ class ViT(nn.Module):
         # if hasattr(self, "classification_head"):
         #     x = self.classification_head(x[:, 0])
         return x, hidden_states_out
+
+
+
+
 
 class ViT3DTower(nn.Module):
     def __init__(self, config):
@@ -172,4 +174,3 @@ class ViT3DTower(nn.Module):
     @property
     def hidden_size(self):
         return self.vision_tower.hidden_size
-        

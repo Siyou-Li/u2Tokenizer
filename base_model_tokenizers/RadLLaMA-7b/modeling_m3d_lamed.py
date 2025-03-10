@@ -3,7 +3,7 @@ from typing import Union
 from transformers import LlamaConfig, LlamaModel, LlamaForCausalLM
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.generation.utils import GenerateOutput
-from .configuration_m3d_lamed import LamedConfig
+from .configuration_m3d_u2 import u2Config
 from abc import ABC, abstractmethod
 from torch import Tensor
 import math
@@ -1731,9 +1731,9 @@ def build_vision_tower(config, **kwargs):
     else:
         raise ValueError(f'Unknown vision tower: {vision_tower}')
 
-class LamedMetaModel:
+class u2MetaModel:
     def __init__(self, config):
-        super(LamedMetaModel, self).__init__(config)
+        super(u2MetaModel, self).__init__(config)
 
         self.config = config
         self.seg_enable = False
@@ -1820,7 +1820,7 @@ class LamedMetaModel:
         self.dice_loss = BinaryDiceLoss()
         self.bce_loss = BCELoss()
 
-class LamedMetaForCausalLM(ABC):
+class u2MetaForCausalLM(ABC):
     @abstractmethod
     def get_model(self):
         pass
@@ -1892,18 +1892,18 @@ class LamedMetaForCausalLM(ABC):
 
 
 
-class LamedLlamaModel(LamedMetaModel, LlamaModel):
-    config_class = LamedConfig
+class u2LlamaModel(u2MetaModel, LlamaModel):
+    config_class = u2Config
     def __init__(self, config: LlamaConfig):
-        super(LamedLlamaModel, self).__init__(config)
+        super(u2LlamaModel, self).__init__(config)
 
 
-class LamedLlamaForCausalLM(LamedMetaForCausalLM, LlamaForCausalLM):
-    config_class = LamedConfig
+class u2LlamaForCausalLM(u2MetaForCausalLM, LlamaForCausalLM):
+    config_class = u2Config
 
     def __init__(self, config):
         super(LlamaForCausalLM, self).__init__(config)
-        self.model = LamedLlamaModel(config)
+        self.model = u2LlamaModel(config)
         self.pretraining_tp = config.pretraining_tp
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)

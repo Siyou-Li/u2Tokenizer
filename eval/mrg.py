@@ -28,7 +28,7 @@ def find_all_linear_names(model):
             lora_module_names.add(name)
     return list(lora_module_names)
 
-class LlamedModel:
+class Lu2Model:
     def __init__(self, model_path: str, lora_weight_path: str = None):
         self.tokenizer =  AutoTokenizer.from_pretrained(
             model_path,
@@ -39,7 +39,7 @@ class LlamedModel:
             trust_remote_code=True
         )
 
-        lamed_model = AutoModelForCausalLM.from_pretrained(
+        u2_model = AutoModelForCausalLM.from_pretrained(
             model_path,
             trust_remote_code=True,
         )
@@ -48,20 +48,20 @@ class LlamedModel:
             lora_config = LoraConfig(
                 r=16,
                 lora_alpha=32,
-                target_modules=find_all_linear_names(lamed_model),
+                target_modules=find_all_linear_names(u2_model),
                 lora_dropout=0.05,
                 bias="none",
                 task_type="CAUSAL_LM",
             )
             print("Adding LoRA adapters only on LLM.")
-            lamed_model = get_peft_model(lamed_model, lora_config)
+            u2_model = get_peft_model(u2_model, lora_config)
             print("Load weights with LoRA")
             state_dict = torch.load(lora_weight_path, map_location=device)
-            lamed_model.load_state_dict(state_dict, strict=True)
+            u2_model.load_state_dict(state_dict, strict=True)
             print("Merge weights with LoRA")
-            lamed_model = lamed_model.merge_and_unload()
+            u2_model = u2_model.merge_and_unload()
         
-        self.model = lamed_model.to(device).eval()
+        self.model = u2_model.to(device).eval()
 
     def inference(self, image, question, temperature=1.0, top_p=0.9):
 
@@ -84,7 +84,7 @@ def check_character_and_length(answer):
         return False
     return True
 
-def mrg_annotation(dataloader, lamed_model):
+def mrg_annotation(dataloader, u2_model):
     gt_report = []
     pred_report= []
 
@@ -95,7 +95,7 @@ def mrg_annotation(dataloader, lamed_model):
         image = batch["image"]
         question = batch["question"][0]
         while True:
-            pred = lamed_model.inference(image, question).strip()
+            pred = u2_model.inference(image, question).strip()
             if check_character_and_length(pred):
                 break
 
@@ -105,26 +105,26 @@ def mrg_annotation(dataloader, lamed_model):
         if num == 10:
             break
 
-    green_model_path = "/import/c4dm-04/siyoul/Med3DLLM/pretrained_models/GREEN-RadLlama2-7b"
+    green_model_path = "/import/c4dm-04/siyoul/u2Tokenizer/pretrained_models/GREEN-RadLlama2-7b"
     green_model = GREEN(green_model_path)
     mean, std, green_score_list, summary, result_df = green_model(refs=gt_report, hyps=pred_report)
     return mean
     
 if __name__ == "__main__":
-    lamed_model_path = config["project_path"] + "/checkpoint/amosmm_chatgpt_llama3.2_1b_l3dt_lora_0217@bs1_acc1_ep16_lr2e5_ws4_fused/checkpoint-18000"
+    u2_model_path = config["project_path"] + "/checkpoint/amosmm_chatgpt_llama3.2_1b_u2t_lora_0217@bs1_acc1_ep16_lr2e5_ws4_fused/checkpoint-18000"
     lora_weight_path = None
-    llamed_model = LlamedModel(lamed_model_path, lora_weight_path)
+    lu2_model = Lu2Model(u2_model_path, lora_weight_path)
 
     val_base_path = config["project_path"] + '/datasets'
     val_jsonl_path = config["project_path"] + '/datasets/Fused_Dataset/val/amos_mm_findings.jsonl'
     dataset = FusedDataset(
         val_base_path, 
         val_jsonl_path, 
-        llamed_model.tokenizer, 
+        lu2_model.tokenizer, 
         max_length=1024, 
         image_tokens_num=256, 
         data_type="valuation",
-        enable_linear_3d_tokenizer=False
+        enable_u2tokenizer=False
     )
 
     def collate_fn(batch):
@@ -135,6 +135,6 @@ if __name__ == "__main__":
 
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
 
-    mean = mrg_annotation(dataloader, llamed_model)
-    print("Checkpoint: ", lamed_model_path.split("/")[-2])
+    mean = mrg_annotation(dataloader, lu2_model)
+    print("Checkpoint: ", u2_model_path.split("/")[-2])
     print("Mean: ", mean)

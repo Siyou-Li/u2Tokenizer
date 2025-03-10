@@ -12,10 +12,10 @@ from tqdm import tqdm
 import SimpleITK as sitk
 from scipy.ndimage import zoom
 from peft import LoraConfig, get_peft_model
-from src.utils.linear_3d_transform import Linear3DTransform
+from src.utils.u2Transform import u2Transform
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-l3dt = Linear3DTransform(data_type="validation")
+u2t = u2Transform(data_type="validation")
 
 nltk.download('wordnet', quiet=True)
 
@@ -79,8 +79,8 @@ def load_model():
     device = torch.device('cuda') # 'cpu', 'cuda'
     dtype = torch.bfloat16 # or bfloat16, float16, float32
 
-    model_name_or_path = '/import/c4dm-04/siyoul/Med3DLLM/checkpoint/amosmm_chatgpt_stage_1/checkpoint-100080'
-    lora_model_path = '/import/c4dm-04/siyoul/Med3DLLM/checkpoint/amosmm_chatgpt_stage_1/model_with_lora.bin'
+    model_name_or_path = '/import/c4dm-04/siyoul/u2Tokenizer/checkpoint/amosmm_chatgpt_stage_1/checkpoint-100080'
+    lora_model_path = '/import/c4dm-04/siyoul/u2Tokenizer/checkpoint/amosmm_chatgpt_stage_1/model_with_lora.bin'
     state_dict = torch.load(lora_model_path, map_location="cpu")
 
     base_model = AutoModelForCausalLM.from_pretrained(
@@ -107,7 +107,7 @@ def load_model():
         )
         print("Adding LoRA adapters only on LLM.")
         model = get_peft_model(base_model, lora_config)
-        # lamed_model.print_trainable_parameters()
+        # u2_model.print_trainable_parameters()
         print("Load weights with LoRA")
         model.load_state_dict(state_dict, strict=True)
         print("Merge weights with LoRA")
@@ -117,7 +117,7 @@ def load_model():
 def generate_caption(model, tokenizer, image_file_path):
     # try:
     device = next(model.parameters()).device
-    image = l3dt(image_file_path)
+    image = u2t(image_file_path)
     
     question = "Can you provide a caption consists of findings and expressions for this medical image?"
     question_ids = tokenizer(
@@ -186,7 +186,7 @@ def evaluate_captions(references, hypothesis):
         return None
 
 def main():
-    base_path = '/import/c4dm-04/siyoul/Med3DLLM/datasets/AMOS-MM/'
+    base_path = '/import/c4dm-04/siyoul/u2Tokenizer/datasets/AMOS-MM/'
     
     # 加载数据集信息
     dataset_info = load_dataset_info(base_path)

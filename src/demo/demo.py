@@ -20,7 +20,7 @@ def seed_everything(seed):
 
 @dataclass
 class AllArguments:
-    model_name_or_path: str = field(default="/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/LaMed/output/LaMed-pretrain-0000/checkpoint-6000")
+    model_name_or_path: str = field(default="/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/u2/output/u2-pretrain-0000/checkpoint-6000")
 
     proj_out_num: int = field(default=256, metadata={"help": "Number of output tokens in Projector."})
     image_path: str = field(default="./Data/data/examples/example_04.npy")

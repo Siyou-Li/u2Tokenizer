@@ -3,8 +3,8 @@ from typing import Union
 from transformers import Phi3Config, Phi3Model, Phi3ForCausalLM
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.generation.utils import GenerateOutput
-from .configuration_m3d_lamed import LamedPhi3Config
-from .linear_3d_tokenizer import build_linear3dtokenizer_tower
+from .configuration_m3d_u2 import u2Phi3Config
+from .u2Tokenizer import build_u2tokenizer_tower
 from abc import ABC, abstractmethod
 from torch import Tensor
 import math
@@ -1732,20 +1732,20 @@ def build_vision_tower(config, **kwargs):
     else:
         raise ValueError(f'Unknown vision tower: {vision_tower}')
 
-class LamedMetaModel:
+class u2MetaModel:
     def __init__(self, config):
-        super(LamedMetaModel, self).__init__(config)
+        super(u2MetaModel, self).__init__(config)
 
         self.config = config
 
         if hasattr(config, "vision_tower"):
             self.vision_tower = build_vision_tower(config)
             self.mm_projector = build_mm_projector(config)
-            self.linear3d_tokenizer = build_linear3dtokenizer_tower(config)
+            self.u2tokenizer = build_u2tokenizer_tower(config)
 
-    def get_linear3d_tokenizer(self):
-        linear3d_tokenizer = getattr(self, 'linear3d_tokenizer', None)
-        return linear3d_tokenizer
+    def get_u2tokenizer(self):
+        u2tokenizer = getattr(self, 'u2tokenizer', None)
+        return u2tokenizer
 
     def get_vision_tower(self):
         vision_tower = getattr(self, 'vision_tower', None)
@@ -1766,10 +1766,10 @@ class LamedMetaModel:
         self.config.proj_pooling_type = model_args.proj_pooling_type
         self.config.proj_pooling_size = model_args.proj_pooling_size
 
-        self.config.enable_linear_3d_tokenizer = model_args.enable_linear_3d_tokenizer
-        self.config.l3dt_num_heads = model_args.l3dt_num_heads
-        self.config.l3dt_num_layers = model_args.l3dt_num_layers
-        self.config.l3dt_top_k = model_args.l3dt_top_k
+        self.config.enable_u2tokenizer = model_args.enable_u2tokenizer
+        self.config.u2t_num_heads = model_args.u2t_num_heads
+        self.config.u2t_num_layers = model_args.u2t_num_layers
+        self.config.u2t_top_k = model_args.u2t_top_k
         self.config.use_multi_scale = model_args.use_multi_scale
         self.config.num_3d_query_token = model_args.num_3d_query_token
 
@@ -1778,8 +1778,8 @@ class LamedMetaModel:
             self.vision_tower = build_vision_tower(self.config)
             # If you have a more robust vision encoder, try freezing the vision tower by requires_grad_(False)
 
-        if self.get_linear3d_tokenizer() is None and model_args.enable_linear_3d_tokenizer:
-            self.linear3d_tokenizer = build_linear3dtokenizer_tower(self.config)
+        if self.get_u2tokenizer() is None and model_args.enable_u2tokenizer:
+            self.u2tokenizer = build_u2tokenizer_tower(self.config)
 
         if model_args.pretrain_vision_model is not None:
             vision_model_weights = torch.load(model_args.pretrain_vision_model, map_location='cpu')
@@ -1797,7 +1797,7 @@ class LamedMetaModel:
                 return {k.split(keyword + '.')[1]: v for k, v in weights.items() if keyword in k}
             self.mm_projector.load_state_dict(get_w(mm_projector_weights, 'mm_projector'), strict=True)
 
-class LamedMetaForCausalLM(ABC):
+class u2MetaForCausalLM(ABC):
     @abstractmethod
     def get_model(self):
         pass
@@ -1818,13 +1818,13 @@ class LamedMetaForCausalLM(ABC):
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
             return input_ids, position_ids, attention_mask, past_key_values, None, labels
         else:
-            if self.config.enable_linear_3d_tokenizer:
+            if self.config.enable_u2tokenizer:
                 B, C, D, H, W = images.shape
                 images = images.view(B * C, 1, D, H, W)
                 image_features = self.encode_images(images)
                 v_tokens = image_features.view(B, C, image_features.shape[-2], image_features.shape[-1])
                 t_tokens = self.get_model().embed_tokens(question_ids)
-                image_features = self.get_linear3d_tokenizer()(v_token=v_tokens, t_token=t_tokens)
+                image_features = self.get_u2tokenizer()(v_token=v_tokens, t_token=t_tokens)
             else:
                 image_features = self.encode_images(images)
             inputs_embeds = self.get_model().embed_tokens(input_ids)
@@ -1877,18 +1877,18 @@ class LamedMetaForCausalLM(ABC):
 
 
 
-class LamedPhi3Model(LamedMetaModel, Phi3Model):
-    config_class = LamedPhi3Config
+class u2Phi3Model(u2MetaModel, Phi3Model):
+    config_class = u2Phi3Config
     def __init__(self, config: Phi3Config):
-        super(LamedPhi3Model, self).__init__(config)
+        super(u2Phi3Model, self).__init__(config)
 
 
-class LamedPhi3ForCausalLM(LamedMetaForCausalLM, Phi3ForCausalLM):
-    config_class = LamedPhi3Config
+class u2Phi3ForCausalLM(u2MetaForCausalLM, Phi3ForCausalLM):
+    config_class = u2Phi3Config
 
     def __init__(self, config):
-        super(LamedPhi3ForCausalLM, self).__init__(config)
-        self.model = LamedPhi3Model(config)
+        super(u2Phi3ForCausalLM, self).__init__(config)
+        self.model = u2Phi3Model(config)
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 

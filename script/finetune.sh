@@ -2,7 +2,7 @@
 
 # run "accelerate config" first!
 export WANDB_API_KEY=00da6485031077ad0ca743ecf911ade54986ffaa
-export PROJECT_PATH=/import/c4dm-04/siyoul/Med3DLLM
+export PROJECT_PATH=/import/c4dm-04/siyoul/u2Tokenizer
 export CHECKPOINT_NAME=amosmm_chatgpt_phi2_0210@bs2_acc1_ep16_lr2e5_ws2_fused
 
 CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch --config_file $PROJECT_PATH/config/accelerate_config.yaml\

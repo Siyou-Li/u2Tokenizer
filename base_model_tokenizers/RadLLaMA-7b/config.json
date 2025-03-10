@@ -1,13 +1,13 @@
 {
   "_name_or_path": "StanfordAIMI/RadLLaMA-7b",
   "architectures": [
-    "LamedLlamaForCausalLM"
+    "u2LlamaForCausalLM"
   ],
   "attention_bias": false,
   "attention_dropout": 0.0,
   "auto_map": {
-    "AutoConfig": "configuration_m3d_lamed.LamedConfig",
-    "AutoModelForCausalLM": "modeling_m3d_lamed.LamedLlamaForCausalLM"
+    "AutoConfig": "configuration_m3d_u2.u2Config",
+    "AutoModelForCausalLM": "modeling_m3d_u2.u2LlamaForCausalLM"
   },
   "bos_token_id": 1,
   "eos_token_id": 2,
@@ -24,7 +24,7 @@
   "max_position_embeddings": 4096,
   "mm_hidden_size": 768,
   "mm_projector_type": "spp",
-  "model_type": "lamed_llama",
+  "model_type": "u2llama",
   "num_attention_heads": 32,
   "num_hidden_layers": 32,
   "num_key_value_heads": 32,

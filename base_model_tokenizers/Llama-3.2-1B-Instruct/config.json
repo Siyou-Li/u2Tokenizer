@@ -1,22 +1,22 @@
 {
   "architectures": [
-    "LamedLlamaForCausalLM"
+    "u2LlamaForCausalLM"
   ],
   "auto_map": {
-    "AutoConfig": "configuration_m3d_lamed.LamedConfig",
-    "AutoModelForCausalLM": "modeling_m3d_lamed.LamedLlamaForCausalLM"
+    "AutoConfig": "configuration_u2.u2Config",
+    "AutoModelForCausalLM": "modeling_u2Llama.u2LlamaForCausalLM"
   },
   "mm_projector_type": "spp",
-  "model_type": "lamed_llama",
+  "model_type": "u2llama",
   "patch_size": [
     4,
     16,
     16
   ],
-  "enable_linear_3d_tokenizer": true,
-  "l3dt_num_heads": 8,
-  "l3dt_num_layers": 4,
-  "l3dt_top_k": 1024,
+  "enable_u2tokenizer": true,
+  "u2t_num_heads": 8,
+  "u2t_num_layers": 4,
+  "u2t_top_k": 1024,
   "use_multi_scale": true,
   "num_3d_query_token":256,
   "proj_layer_num": 2,

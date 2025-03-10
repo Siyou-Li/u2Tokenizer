@@ -13,8 +13,8 @@ world_size = 1
 
 model = vLLMWrapper('Qwen/Qwen-72B-Chat', tensor_parallel_size=2)
 
-in_eval_path = "./LaMed/output/test_caption_linear.csv"
-out_eval_path = "./LaMed/output/test_caption_linear_eval.csv"
+in_eval_path = "./u2/output/test_caption_linear.csv"
+out_eval_path = "./u2/output/test_caption_linear_eval.csv"
 
 system = """
 You are an AI assistant, please evaluate based on the following.

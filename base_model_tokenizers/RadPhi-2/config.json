@@ -1,12 +1,12 @@
 {
   "architectures": [
-    "LamedPhiForCausalLM"
+    "u2PhiForCausalLM"
   ],
   "attention_bias": false,
   "attention_dropout": 0.0,
   "auto_map": {
-    "AutoConfig": "configuration_m3d_lamed.LamedConfig",
-    "AutoModelForCausalLM": "modeling_m3d_lamed.LamedPhiForCausalLM"
+    "AutoConfig": "configuration_m3d_u2.u2Config",
+    "AutoModelForCausalLM": "modeling_m3d_u2.u2PhiForCausalLM"
   },
   "bos_token_id": 50256,
   "embd_pdrop": 0.0,
@@ -25,7 +25,7 @@
   "max_position_embeddings": 2048,
   "mm_hidden_size": 768,
   "mm_projector_type": "spp",
-  "model_type": "lamed_phi",
+  "model_type": "u2phi",
   "num_attention_heads": 32,
   "num_hidden_layers": 32,
   "num_key_value_heads": 32,

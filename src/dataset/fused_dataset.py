@@ -13,12 +13,12 @@ import random
 from monai.utils import MAX_SEED, get_seed
 from monai.transforms import Randomizable
 from src.utils.data_transforms import train_transforms, val_transforms
-from src.utils.linear_3d_transform import Linear3DTransform
+from src.utils.u2Transform import u2Transform
 
 class FusedDataset(Dataset, Randomizable):
     def __init__(
             self, base_path, jsonl_path, tokenizer, max_length,\
-            image_tokens_num=1024, data_type="training", enable_linear_3d_tokenizer=True
+            image_tokens_num=1024, data_type="training", enable_u2tokenizer=True
             ):
         self.base_path = base_path
         self.tokenizer = tokenizer
@@ -30,13 +30,13 @@ class FusedDataset(Dataset, Randomizable):
         self._seed = 0  # transform synchronization seed
 
         if self.data_type == "training" or self.data_type == "train":
-            if enable_linear_3d_tokenizer:
-                self.image_transforms = Linear3DTransform(mode='bilinear', data_type="training")
+            if enable_u2tokenizer:
+                self.image_transforms = u2Transform(mode='bilinear', data_type="training")
             else:
                 self.image_transforms = train_transforms
         else:
-            if enable_linear_3d_tokenizer:
-                self.image_transforms = Linear3DTransform(mode='bilinear', data_type="validation")
+            if enable_u2tokenizer:
+                self.image_transforms = u2Transform(mode='bilinear', data_type="validation")
             else:
                 self.image_transforms = val_transforms     
         

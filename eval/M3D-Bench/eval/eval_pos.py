@@ -10,7 +10,7 @@ from tqdm import tqdm
 from Bench.dataset.multi_dataset import PosRECTestDataset, PosREGTestDataset
 from Bench.utils import extract_box_from_text, calculate_iou
 # If the model is not from huggingface but local, please uncomment and import the model architecture.
-# from LaMed.src.model.language_model import *
+# from u2.src.model.language_model import *
 import matplotlib.pyplot as plt
 import SimpleITK as sitk
 import evaluate
@@ -33,7 +33,7 @@ def seed_everything(seed):
 
 def parse_args(args=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name_or_path', type=str, default="GoodBaiBai88/M3D-LaMed-Llama-2-7B", choices=[])
+    parser.add_argument('--model_name_or_path', type=str, default="GoodBaiBai88/M3D-u2-Llama-2-7B", choices=[])
     parser.add_argument('--max_length', type=int, default=512)
     parser.add_argument('--max_new_tokens', type=int, default=256)
     parser.add_argument('--do_sample', type=bool, default=False)
@@ -47,7 +47,7 @@ def parse_args(args=None):
     parser.add_argument('--term_dict_path', type=str, default="./Data/data/M3D_Seg_npy/term_dictionary.json")
 
     parser.add_argument('--rec', type=bool, default=True, help="REC with box output")
-    parser.add_argument('--output_dir', type=str, default="./LaMed/output/LaMed-finetune-0000/eval_pos/")
+    parser.add_argument('--output_dir', type=str, default="./u2/output/u2-finetune-0000/eval_pos/")
     parser.add_argument('--vis', type=bool, default=False)
 
     parser.add_argument('--proj_out_num', type=int, default=256)

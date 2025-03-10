@@ -19,9 +19,9 @@ def find_all_linear_names(model):
             lora_module_names.add(name)
     return list(lora_module_names)
 
-def load_model(lamed_model_path, lora_weight_path=None):
+def load_model(u2_model_path, lora_weight_path=None):
     tokenizer = AutoTokenizer.from_pretrained(
-        lamed_model_path,
+        u2_model_path,
         model_max_length=512,
         padding_side="left",
         use_fast=False,
@@ -36,8 +36,8 @@ def load_model(lamed_model_path, lora_weight_path=None):
 
     if tokenizer.unk_token is not None and tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.unk_token
-    lamed_model = AutoModelForCausalLM.from_pretrained(
-        lamed_model_path,
+    u2_model = AutoModelForCausalLM.from_pretrained(
+        u2_model_path,
         trust_remote_code=True,
     )
     if lora_weight_path:
@@ -45,30 +45,30 @@ def load_model(lamed_model_path, lora_weight_path=None):
         lora_config = LoraConfig(
             r=16,
             lora_alpha=32,
-            target_modules=find_all_linear_names(lamed_model),
+            target_modules=find_all_linear_names(u2_model),
             lora_dropout=0.05,
             bias="none",
             task_type="CAUSAL_LM",
         )
         print("Adding LoRA adapters only on LLM.")
-        lamed_model = get_peft_model(lamed_model, lora_config)
-        lamed_model.print_trainable_parameters()
+        u2_model = get_peft_model(u2_model, lora_config)
+        u2_model.print_trainable_parameters()
         print("Load weights with LoRA")
         state_dict = torch.load(lora_weight_path, map_location="cuda")
-        lamed_model.load_state_dict(state_dict, strict=True)
+        u2_model.load_state_dict(state_dict, strict=True)
         print("Merge weights with LoRA")
-        lamed_model = lamed_model.merge_and_unload()
+        u2_model = u2_model.merge_and_unload()
         
-    lamed_model = lamed_model.to("cuda")
-    lamed_model.eval()
-    return tokenizer, lamed_model
+    u2_model = u2_model.to("cuda")
+    u2_model.eval()
+    return tokenizer, u2_model
 
-def inference(input_image, input_id, tokenizer, lamed_model, temperature=1.0, top_p=0.9):
+def inference(input_image, input_id, tokenizer, u2_model, temperature=1.0, top_p=0.9):
 
     input_id = tokenizer(input_id, return_tensors="pt")['input_ids'].to("cuda")
     image_pt = torch.from_numpy(input_image).to("cuda")
 
-    generation = lamed_model.generate(image_pt, input_id, max_new_tokens=1,
+    generation = u2_model.generate(image_pt, input_id, max_new_tokens=1,
                                         do_sample=True, top_p=top_p, temperature=temperature)
 
     output_str = tokenizer.batch_decode(generation, skip_special_tokens=True)[0]
@@ -80,7 +80,7 @@ def collate_fn(batch):
         return None
     return torch.utils.data.dataloader.default_collate(batch)
 
-def vqa_annotation(dataloader, tokenizer, lamed_model):
+def vqa_annotation(dataloader, tokenizer, u2_model):
     
     gt_report = []
     pred_report= []
@@ -94,7 +94,7 @@ def vqa_annotation(dataloader, tokenizer, lamed_model):
             gt_report.append(gt)
             input_image = batch["image"].numpy()
             input_id = batch["question"][0]
-            pred, _ = inference(input_image, input_id, tokenizer, lamed_model)
+            pred, _ = inference(input_image, input_id, tokenizer, u2_model)
             pred = pred.strip()[0]
             pred_report.append(pred)
             print("GT:", gt, "Pred:", pred, bool(gt == pred), len(gt), len(pred))
@@ -114,10 +114,10 @@ def vqa_annotation(dataloader, tokenizer, lamed_model):
     
     return accuracy
     
-def woker(tokenizer, lamed_model):
+def woker(tokenizer, u2_model):
     
-    val_base_path = '/import/c4dm-04/siyoul/Med3DLLM/datasets'
-    val_jsonl_path = '/import/c4dm-04/siyoul/Med3DLLM/datasets/Fused_Dataset/val/amos_mm_qa.jsonl'
+    val_base_path = '/import/c4dm-04/siyoul/u2Tokenizer/datasets'
+    val_jsonl_path = '/import/c4dm-04/siyoul/u2Tokenizer/datasets/Fused_Dataset/val/amos_mm_qa.jsonl'
     dataset = FusedDataset(
         val_base_path, 
         val_jsonl_path, 
@@ -127,13 +127,13 @@ def woker(tokenizer, lamed_model):
         data_type="valuation"
         )
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
-    accuracy = vqa_annotation(dataloader, tokenizer, lamed_model)
+    accuracy = vqa_annotation(dataloader, tokenizer, u2_model)
     return accuracy
 
 if __name__ == "__main__":
-    #green_model_path="/import/c4dm-04/siyoul/Med3DLLM/pretrained_models/GREEN-RadLlama2-7b"
-    lamed_model_path = "/import/c4dm-04/siyoul/Med3DLLM/checkpoint/Med3dLLM_0113_mrg_llama3.2@1b_bs8_acc1_ep16_lr2e5_ws4_fused/checkpoint-218000"
-    tokenizer, lamed_model = load_model(lamed_model_path)
-    accuracy = woker(tokenizer, lamed_model)
-    print("Checkpoint: ", lamed_model_path.split("/")[-2])
+    #green_model_path="/import/c4dm-04/siyoul/u2Tokenizer/pretrained_models/GREEN-RadLlama2-7b"
+    u2_model_path = "/import/c4dm-04/siyoul/u2Tokenizer/checkpoint/Med3dLLM_0113_mrg_llama3.2@1b_bs8_acc1_ep16_lr2e5_ws4_fused/checkpoint-218000"
+    tokenizer, u2_model = load_model(u2_model_path)
+    accuracy = woker(tokenizer, u2_model)
+    print("Checkpoint: ", u2_model_path.split("/")[-2])
     print("Accuracy: ", accuracy)

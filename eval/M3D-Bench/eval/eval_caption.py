@@ -9,7 +9,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from tqdm import tqdm
 from Bench.dataset.multi_dataset import CapDataset
 # If the model is not from huggingface but local, please uncomment and import the model architecture.
-# from LaMed.src.model.language_model import *
+# from u2.src.model.language_model import *
 import evaluate
 
 accuracy = evaluate.load("accuracy")
@@ -31,7 +31,7 @@ def seed_everything(seed):
 
 def parse_args(args=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name_or_path', type=str, default="GoodBaiBai88/M3D-LaMed-Llama-2-7B", choices=[])
+    parser.add_argument('--model_name_or_path', type=str, default="GoodBaiBai88/M3D-u2-Llama-2-7B", choices=[])
     parser.add_argument('--max_length', type=int, default=512)
     parser.add_argument('--max_new_tokens', type=int, default=256)
     parser.add_argument('--do_sample', type=bool, default=False)
@@ -42,7 +42,7 @@ def parse_args(args=None):
     # data
     parser.add_argument('--data_root', type=str, default="./Data/data")
     parser.add_argument('--cap_data_path', type=str, default="./Data/data/M3D_Cap_npy/M3D_Cap.json")
-    parser.add_argument('--output_dir', type=str, default="./LaMed/output/LaMed-finetune-0000/eval_caption/")
+    parser.add_argument('--output_dir', type=str, default="./u2/output/u2-finetune-0000/eval_caption/")
 
     parser.add_argument('--proj_out_num', type=int, default=256)
 

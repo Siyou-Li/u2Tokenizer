@@ -10,7 +10,7 @@ transforms = Compose(
         LoadImage(image_only=True, ensure_channel_first=False, reader=NibabelReader()),
     ]
 )
-image_dir = "/import/c4dm-04/siyoul/Med3DLLM/datasets/AMOS-MM/imagesVa"
+image_dir = "/import/c4dm-04/siyoul/u2Tokenizer/datasets/AMOS-MM/imagesVa"
 nii_files = os.listdir(image_dir)
 
 # Statistics of shape distribution

@@ -2,19 +2,19 @@
 
 # run "accelerate config" first!
 export WANDB_API_KEY=00da6485031077ad0ca743ecf911ade54986ffaa
-export PROJECT_PATH=/import/c4dm-04/siyoul/Med3DLLM
-export CHECKPOINT_NAME=m3d_cap_l3dt_0214@bs4_acc1_ep8_lr2e5_ws4
+export PROJECT_PATH=/import/c4dm-04/siyoul/u2Tokenizer
+export CHECKPOINT_NAME=m3d_cap_u2t_0214@bs4_acc1_ep8_lr2e5_ws4
 
 CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch --config_file $PROJECT_PATH/config/accelerate_config.yaml\
     --main_process_port 29501 \
     src/train/med3d_llm_train.py \
     --version v0 \
-    --model_name_or_path  $PROJECT_PATH/pretrained_models/M3D-LaMed-Phi-3-4B \
+    --model_name_or_path  $PROJECT_PATH/pretrained_models/M3D-u2-Phi-3-4B \
     --model_type phi3 \
     --lora_enable False \
     --vision_tower vit3d \
     --pretrain_vision_model $PROJECT_PATH/pretrained_models/M3D-CLIP/pretrained_ViT.bin \
-    --pretrain_mm_mlp_adapter $PROJECT_PATH/pretrained_models/M3D-LaMed-Phi-3-4B/mm_projector.bin \
+    --pretrain_mm_mlp_adapter $PROJECT_PATH/pretrained_models/M3D-u2-Phi-3-4B/mm_projector.bin \
     --tune_mm_mlp_adapter False \
     --bf16 True \
     --output_dir $PROJECT_PATH/checkpoint/$CHECKPOINT_NAME \
@@ -42,4 +42,4 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch --config_file $PROJECT_PATH/confi
     --freeze_vision_tower True \
     --freeze_backbone True \
     --model_max_length 1024 \
-    --enable_linear_3d_tokenizer True \
+    --enable_u2tokenizer True \

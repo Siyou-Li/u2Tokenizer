@@ -10,8 +10,8 @@ from transformers import AutoTokenizer, LlamaForCausalLM, AutoModelForCausalLM
 from dataclasses import dataclass, field
 from src.dataset.fused_dataset_m3d import FusedDataset
 from src.dataset.multi_dataset import UniDatasets, CapDataset, TextDatasets, VQADataset
-from src.med3d_model.language_model import LamedLlamaForCausalLM, LamedPhi3ForCausalLM
-from src.train.lamed_trainer import LaMedTrainer
+from src.model.language_model import u2LlamaForCausalLM, u2Phi3ForCausalLM
+from src.train.sft_u2Trainer import u2Trainer
 import os
 import torch._dynamo
 torch._dynamo.config.suppress_errors = False
@@ -69,10 +69,10 @@ class ModelArguments:
     wandb_run_name: Optional[str] = field(default="test", metadata={"help": "wandb run name"})
 
     # linear 3d tokenizer config
-    enable_linear_3d_tokenizer: bool = False
-    l3dt_num_heads: int = 8
-    l3dt_num_layers: int = 4
-    l3dt_top_k: int = 1024
+    enable_u2tokenizer: bool = False
+    u2t_num_heads: int = 8
+    u2t_num_layers: int = 4
+    u2t_top_k: int = 1024
     use_multi_scale: bool = True
     num_3d_query_token: int = 256
     enable_rpe: bool = False
@@ -87,8 +87,8 @@ class DataArguments:
     val_base_path: str = field(default="", metadata={"help": "Path to image data."})
     
     # caption data
-    data_root: str = field(default="/import/c4dm-04/siyoul/Med3DLLM/datasets/M3D-Cap/", metadata={"help": "Root directory for all data."})
-    cap_data_path: str = field(default="/import/c4dm-04/siyoul/Med3DLLM/datasets/M3D-Cap/M3D_Cap_npy/M3D_Cap.json", metadata={"help": "Path to caption data."})
+    data_root: str = field(default="/import/c4dm-04/siyoul/u2Tokenizer/datasets/M3D-Cap/", metadata={"help": "Root directory for all data."})
+    cap_data_path: str = field(default="/import/c4dm-04/siyoul/u2Tokenizer/datasets/M3D-Cap/M3D_Cap_npy/M3D_Cap.json", metadata={"help": "Path to caption data."})
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -116,7 +116,7 @@ class TrainingArguments(transformers.TrainingArguments):
 
     # This is set up to facilitate debugging, pls config these in bash file in training.
     bf16: bool = True
-    output_dir: str = "./LaMed/output/LaMed-pretrain-test"
+    output_dir: str = "./u2/output/u2-pretrain-test"
     num_train_epochs: float = 1
     per_device_train_batch_size: int = 1
     per_device_eval_batch_size: int = 1
@@ -220,7 +220,7 @@ def find_all_linear_names(model):
     cls = torch.nn.Linear
     lora_module_names = set()
     # Process of elimination: LoRA only targets on LLM backbone
-    ignore_keywords = ['vision_tower', 'mm_projector', 'embed_tokens', 'lm_head', 'seg_projector', 'seg_module', 'linear3d_tokenizer']
+    ignore_keywords = ['vision_tower', 'mm_projector', 'embed_tokens', 'lm_head', 'seg_projector', 'seg_module', 'u2tokenizer']
     for name, module in model.named_modules():
         if any(mm_keyword in name for mm_keyword in ignore_keywords):
             continue
@@ -282,7 +282,7 @@ def main():
     if model_args.vision_tower is not None:
         if 'llama' in model_args.model_type:
             rank0_print("Base model: ", model_args.model_name_or_path)
-            model = LamedLlamaForCausalLM.from_pretrained(
+            model = u2LlamaForCausalLM.from_pretrained(
                 model_args.model_name_or_path,
                 cache_dir=training_args.cache_dir,
                 bos_token_id=tokenizer.bos_token_id,
@@ -290,7 +290,7 @@ def main():
             )
         elif 'phi3' in model_args.model_type:
             rank0_print("Base model: ", model_args.model_name_or_path)
-            model = LamedPhi3ForCausalLM.from_pretrained(
+            model = u2Phi3ForCausalLM.from_pretrained(
                 model_args.model_name_or_path,
                 cache_dir=training_args.cache_dir
                 )
@@ -346,7 +346,7 @@ def main():
 
         for n, p in model.named_parameters():
             if any(
-                    [x in n for x in ['vision_tower', 'mm_projector', 'embed_tokens', 'lm_head', 'seg_projector', 'seg_module', 'linear3d_tokenizer']]
+                    [x in n for x in ['vision_tower', 'mm_projector', 'embed_tokens', 'lm_head', 'seg_projector', 'seg_module', 'u2tokenizer']]
             ):
                 p.requires_grad = True
 
@@ -365,12 +365,12 @@ def main():
     image_tokens_num=data_args.proj_out_num
     # train_dataset = CapDataset(data_args, tokenizer, mode='train')
     # eval_dataset = CapDataset(data_args, tokenizer, mode='validation')
-    train_dataset = FusedDataset(data_args.train_base_path, data_args.train_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training", enable_linear_3d_tokenizer=model_args.enable_linear_3d_tokenizer, local_rank=local_rank)
-    eval_dataset = FusedDataset(data_args.val_base_path, data_args.val_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="valuation", enable_linear_3d_tokenizer=model_args.enable_linear_3d_tokenizer, local_rank=local_rank)
+    train_dataset = FusedDataset(data_args.train_base_path, data_args.train_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training", enable_u2tokenizer=model_args.enable_u2tokenizer, local_rank=local_rank)
+    eval_dataset = FusedDataset(data_args.val_base_path, data_args.val_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="valuation", enable_u2tokenizer=model_args.enable_u2tokenizer, local_rank=local_rank)
     data_collator = DataCollator()
     
     rank0_print("="*20 + " Training " + "="*20)
-    trainer = LaMedTrainer(
+    trainer = u2Trainer(
                             model=model,
                             args=training_args,
                             data_collator=data_collator,

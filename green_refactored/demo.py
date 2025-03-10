@@ -34,7 +34,7 @@ def find_all_linear_names(model):
             lora_module_names.add(name)
     return list(lora_module_names)
 
-class LlamedModel:
+class Lu2Model:
     def __init__(self, model_path: str, lora_weight_path: str = None):
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_path,
@@ -44,7 +44,7 @@ class LlamedModel:
             trust_remote_code=True
         )
 
-        lamed_model = AutoModelForCausalLM.from_pretrained(
+        u2_model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=dtype,
             device_map='auto',
@@ -54,19 +54,28 @@ class LlamedModel:
             lora_config = LoraConfig(
                 r=16,
                 lora_alpha=32,
-                target_modules=find_all_linear_names(lamed_model),
+                target_modules=find_all_linear_names(u2_model),
                 lora_dropout=0.05,
                 bias="none",
                 task_type="CAUSAL_LM",
             )
             print("Adding LoRA adapters only on LLM.")
-            lamed_model = get_peft_model(lamed_model, lora_config)
+            u2_model = get_peft_model(u2_model, lora_config)
             print("Load weights with LoRA")
+<<<<<<< Updated upstream
             state_dict = torch.load(lora_weight_path, map_location="cpu")
             lamed_model.load_state_dict(state_dict, strict=True)
             print("Merge weights with LoRA")
             lamed_model = lamed_model.merge_and_unload()
         self.model = lamed_model.eval()
+=======
+            state_dict = torch.load(lora_weight_path, map_location=device)
+            u2_model.load_state_dict(state_dict, strict=True)
+            print("Merge weights with LoRA")
+            u2_model = u2_model.merge_and_unload()
+        
+        self.model = u2_model.to(device).eval()
+>>>>>>> Stashed changes
 
     def inference(self, image, question, temperature=1.0, top_p=0.9):
         proj_out_num = 256
@@ -138,15 +147,22 @@ def check_character_and_length(answer):
         return False
     return True
 
+<<<<<<< Updated upstream
 
 def generate_predictions(dataloader, lamed_model):
     results = []
+=======
+def generate_predictions(dataloader, u2_model):
+    gt_report = []
+    pred_report= []
+>>>>>>> Stashed changes
 
     for batch in tqdm(dataloader):
         if batch is None:
             continue
 
         image = batch["image"]
+<<<<<<< Updated upstream
         image_path = batch["image_path"][0][len(dataloader.dataset.dataset.base_path)+1:]
         question = batch["prompt_question"][0]
         ground_truth = batch["answer"][0]
@@ -158,6 +174,13 @@ def generate_predictions(dataloader, lamed_model):
                     if check_character_and_length(pred):
                         break
                 predictions.append(pred)
+=======
+        question = batch["question"][0]
+        while True:
+            pred = u2_model.inference(image, question).strip()
+            if check_character_and_length(pred):
+                break
+>>>>>>> Stashed changes
 
             result = {
                 "image": image_path,
@@ -170,7 +193,35 @@ def generate_predictions(dataloader, lamed_model):
             json.dump(result, f, ensure_ascii=False)
             f.write("\n")
 
+<<<<<<< Updated upstream
     return results
+=======
+def evaluate():
+    u2_model_path = config["project_path"] + "/checkpoint/checkpoint-18000"
+    lora_weight_path = None
+    lu2_model = Lu2Model(u2_model_path, lora_weight_path)
+
+    val_base_path = config["project_path"] + '/datasets'
+    val_jsonl_path = config["project_path"] + '/datasets/Fused_Dataset/val/amos_mm_findings.jsonl'
+    dataset = FusedDataset(
+        val_base_path, 
+        val_jsonl_path, 
+        lu2_model.tokenizer, 
+        max_length=2048, 
+        image_tokens_num=256, 
+        data_type="valuation"
+    )
+
+    def collate_fn(batch):
+        batch = list(filter(lambda x: x is not None, batch))
+        if not batch:
+            return None
+        return torch.utils.data.dataloader.default_collate(batch)
+
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
+
+    gt_report, pred_report = generate_predictions(dataloader, lu2_model)
+>>>>>>> Stashed changes
 
 
 

@@ -6,7 +6,7 @@ import argparse
 from transformers import AutoTokenizer
 from tqdm import tqdm
 from Bench.dataset.multi_dataset import ITRDataset
-from LaMed.src.model.CLIP import *
+from u2.src.model.CLIP import *
 
 
 def seed_everything(seed):
@@ -28,7 +28,7 @@ def parse_args(args=None):
     # data
     parser.add_argument('--data_root', type=str, default="./Data/data/")
     parser.add_argument('--cap_data_path', type=str, default="./Data/data/M3D_Cap_npy/M3D_Cap_eh.json")
-    parser.add_argument('--output_dir', type=str, default="./LaMed/output/CLIP/eval_itr/")
+    parser.add_argument('--output_dir', type=str, default="./u2/output/CLIP/eval_itr/")
     parser.add_argument('--save_output', type=bool, default=False)
 
     return parser.parse_args(args)

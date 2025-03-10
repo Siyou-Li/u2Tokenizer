@@ -16,7 +16,7 @@ import os
 import shutil
 #from config import config
 
-base_path = "/import/c4dm-04/siyoul/Med3DLLM"
+base_path = "/import/c4dm-04/siyoul/u2Tokenizer"
 class NlfTIUtils:
     def __init__(self, mode='trilinear'):
         self.adaptive_transforms = Compose(

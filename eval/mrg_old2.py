@@ -23,22 +23,22 @@ def find_all_linear_names(model):
             lora_module_names.add(name)
     return list(lora_module_names)
 
-def load_model(green_model_path, lamed_model_path, lora_weight_path=None):
+def load_model(green_model_path, u2_model_path, lora_weight_path=None):
     green_model = GREEN(
         green_model_path,
         output_dir="."
         )
     #green_model = green_model.to("cuda:{}".format(device))
     tokenizer = AutoTokenizer.from_pretrained(
-        lamed_model_path,
+        u2_model_path,
         model_max_length=512,
         padding_side="right",
         use_fast=False,
         pad_token="<unk>",
         trust_remote_code=True
     )
-    lamed_model = AutoModelForCausalLM.from_pretrained(
-        lamed_model_path,
+    u2_model = AutoModelForCausalLM.from_pretrained(
+        u2_model_path,
         trust_remote_code=True,
     )
     if lora_weight_path:
@@ -46,24 +46,24 @@ def load_model(green_model_path, lamed_model_path, lora_weight_path=None):
         lora_config = LoraConfig(
             r=16,
             lora_alpha=32,
-            target_modules=find_all_linear_names(lamed_model),
+            target_modules=find_all_linear_names(u2_model),
             lora_dropout=0.05,
             bias="none",
             task_type="CAUSAL_LM",
         )
         print("Adding LoRA adapters only on LLM.")
-        lamed_model = get_peft_model(lamed_model, lora_config)
-        # lamed_model.print_trainable_parameters()
+        u2_model = get_peft_model(u2_model, lora_config)
+        # u2_model.print_trainable_parameters()
         print("Load weights with LoRA")
         state_dict = torch.load(lora_weight_path, map_location="cuda")
-        lamed_model.load_state_dict(state_dict, strict=True)
+        u2_model.load_state_dict(state_dict, strict=True)
         print("Merge weights with LoRA")
-        lamed_model = lamed_model.merge_and_unload()
+        u2_model = u2_model.merge_and_unload()
         
     
     with torch.no_grad():
-        lamed_model = lamed_model.to("cuda")
-    return green_model, tokenizer, lamed_model
+        u2_model = u2_model.to("cuda")
+    return green_model, tokenizer, u2_model
 
 def green_score(pred_report, gt_report, categorize, green_model):
 
@@ -89,7 +89,7 @@ def collate_fn(batch):
         return None
     return torch.utils.data.dataloader.default_collate(batch)
 
-def mrg_annotation(dataloader, green_model, tokenizer, lamed_model):
+def mrg_annotation(dataloader, green_model, tokenizer, u2_model):
     
     gt_report = []
     pred_report= []
@@ -104,7 +104,7 @@ def mrg_annotation(dataloader, green_model, tokenizer, lamed_model):
         input_ids = batch["input_id"]
         question_ids = batch["question_ids"]
         
-        pred = inference(image, input_ids, question_ids, lamed_model)
+        pred = inference(image, input_ids, question_ids, u2_model)
         print(pred)
         pred_report.append(pred)
         if num == 10:
@@ -115,10 +115,10 @@ def mrg_annotation(dataloader, green_model, tokenizer, lamed_model):
     mean_green_score = green_score(pred_report, gt_report, green_model)
     return mean_green_score
     
-def woker(green_model, tokenizer, lamed_model):
+def woker(green_model, tokenizer, u2_model):
     
-    val_base_path = '/import/c4dm-04/siyoul/Med3DLLM/datasets'
-    val_jsonl_path = '/import/c4dm-04/siyoul/Med3DLLM/datasets/Fused_Dataset/val/amos_mm_findings.jsonl'
+    val_base_path = '/import/c4dm-04/siyoul/u2Tokenizer/datasets'
+    val_jsonl_path = '/import/c4dm-04/siyoul/u2Tokenizer/datasets/Fused_Dataset/val/amos_mm_findings.jsonl'
     dataset = FusedDataset(
         val_base_path, 
         val_jsonl_path, 
@@ -126,7 +126,7 @@ def woker(green_model, tokenizer, lamed_model):
         max_length=1024, 
         image_tokens_num=256, 
         data_type="valuation",
-        enable_linear_3d_tokenizer=True
+        enable_u2tokenizer=True
     )
 
     def collate_fn(batch):
@@ -136,19 +136,19 @@ def woker(green_model, tokenizer, lamed_model):
         return torch.utils.data.dataloader.default_collate(batch)
 
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
-    mean_green_score = mrg_annotation(dataloader, green_model, tokenizer, lamed_model)
+    mean_green_score = mrg_annotation(dataloader, green_model, tokenizer, u2_model)
     # mean_green_scores.append(mean_green_score)
     # for categorize, mean_green_score in zip(["Chest","Abdomen","Pelvis"], mean_green_scores):
     return "Average GREEN Score: {}".format(mean_green_score)
 
 if __name__ == "__main__":
-    green_model_path="/import/c4dm-04/siyoul/Med3DLLM/pretrained_models/GREEN-RadLlama2-7b"
-    lamed_model_path = "/import/c4dm-04/siyoul/Med3DLLM/checkpoint/amosmm_chatgpt_llama3.2_1b_l3dt_lora_0217@bs1_acc1_ep16_lr2e5_ws4_fused/checkpoint-18000"
+    green_model_path="/import/c4dm-04/siyoul/u2Tokenizer/pretrained_models/GREEN-RadLlama2-7b"
+    u2_model_path = "/import/c4dm-04/siyoul/u2Tokenizer/checkpoint/amosmm_chatgpt_llama3.2_1b_u2t_lora_0217@bs1_acc1_ep16_lr2e5_ws4_fused/checkpoint-18000"
     lora_weight_path = None
-    green_model, tokenizer, lamed_model = load_model(green_model_path, lamed_model_path, lora_weight_path)
-    print(lamed_model_path.split("/")[-2])
+    green_model, tokenizer, u2_model = load_model(green_model_path, u2_model_path, lora_weight_path)
+    print(u2_model_path.split("/")[-2])
     results = []
-    results.append(woker(green_model, tokenizer, lamed_model))
+    results.append(woker(green_model, tokenizer, u2_model))
     for result in results:
         print(result)
-    print(lamed_model_path.split("/")[-2])
+    print(u2_model_path.split("/")[-2])

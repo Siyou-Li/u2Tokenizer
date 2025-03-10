@@ -10,7 +10,7 @@ from tqdm import tqdm
 from Bench.dataset.multi_dataset import SegDataset
 from Bench.eval.metrics import BinaryDice
 # If the model is not from huggingface but local, please uncomment and import the model architecture.
-# from LaMed.src.model.language_model import *
+# from u2.src.model.language_model import *
 import SimpleITK as sitk
 import evaluate
 
@@ -32,7 +32,7 @@ def seed_everything(seed):
 
 def parse_args(args=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name_or_path', type=str, default="GoodBaiBai88/M3D-LaMed-Llama-2-7B", choices=[])
+    parser.add_argument('--model_name_or_path', type=str, default="GoodBaiBai88/M3D-u2-Llama-2-7B", choices=[])
     parser.add_argument('--max_length', type=int, default=512)
     parser.add_argument('--max_new_tokens', type=int, default=256)
     parser.add_argument('--do_sample', type=bool, default=False)
@@ -45,7 +45,7 @@ def parse_args(args=None):
     parser.add_argument('--seg_data_path', type=str, default="./Data/data/M3D_Seg_npy/")
     parser.add_argument('--term_dict_path', type=str, default="./Data/data/M3D_Seg_npy/term_dictionary.json")
 
-    parser.add_argument('--output_dir', type=str, default="./LaMed/output/LaMed-finetune-0000/eval_seg/")
+    parser.add_argument('--output_dir', type=str, default="./u2/output/u2-finetune-0000/eval_seg/")
     parser.add_argument('--res', type=bool, default=False, help="RES (Referring Expression Segmentation) or SS (Segmantic Segmentation)")
     parser.add_argument('--dataset_id', type=str, default='0011', help="Which test dataset", choices=['0003', '0011', '0012'])
     parser.add_argument('--vis', type=bool, default=False)

@@ -17,8 +17,8 @@ import SimpleITK as sitk
 import cv2
 
 def parse_args(args):
-    parser = argparse.ArgumentParser(description="M3D-LaMed chat")
-    parser.add_argument('--model_name_or_path', type=str, default="/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/LaMed/output/example", choices=[])
+    parser = argparse.ArgumentParser(description="M3D-u2 chat")
+    parser.add_argument('--model_name_or_path', type=str, default="/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/u2/output/example", choices=[])
     parser.add_argument("--vis_save_path", default="./vis_output", type=str)
     parser.add_argument(
         "--precision",

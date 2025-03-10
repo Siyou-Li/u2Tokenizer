@@ -22,22 +22,22 @@ def find_all_linear_names(model):
             lora_module_names.add(name)
     return list(lora_module_names)
 
-def load_model(green_model_path, lamed_model_path, lora_weight_path=None):
+def load_model(green_model_path, u2_model_path, lora_weight_path=None):
     green_model = GREEN(
         green_model_path,
         output_dir="."
         )
     #green_model = green_model.to("cuda:{}".format(device))
     tokenizer = AutoTokenizer.from_pretrained(
-        lamed_model_path,
+        u2_model_path,
         model_max_length=512,
         padding_side="left",
         use_fast=False,
         pad_token="<unk>",
         trust_remote_code=True
     )
-    lamed_model = AutoModelForCausalLM.from_pretrained(
-        lamed_model_path,
+    u2_model = AutoModelForCausalLM.from_pretrained(
+        u2_model_path,
         trust_remote_code=True,
     )
     if lora_weight_path:
@@ -45,24 +45,24 @@ def load_model(green_model_path, lamed_model_path, lora_weight_path=None):
         lora_config = LoraConfig(
             r=16,
             lora_alpha=32,
-            target_modules=find_all_linear_names(lamed_model),
+            target_modules=find_all_linear_names(u2_model),
             lora_dropout=0.05,
             bias="none",
             task_type="CAUSAL_LM",
         )
         print("Adding LoRA adapters only on LLM.")
-        lamed_model = get_peft_model(lamed_model, lora_config)
-        # lamed_model.print_trainable_parameters()
+        u2_model = get_peft_model(u2_model, lora_config)
+        # u2_model.print_trainable_parameters()
         print("Load weights with LoRA")
         state_dict = torch.load(lora_weight_path, map_location="cuda")
-        lamed_model.load_state_dict(state_dict, strict=True)
+        u2_model.load_state_dict(state_dict, strict=True)
         print("Merge weights with LoRA")
-        lamed_model = lamed_model.merge_and_unload()
+        u2_model = u2_model.merge_and_unload()
         
     
     with torch.no_grad():
-        lamed_model = lamed_model.to("cuda")
-    return green_model, tokenizer, lamed_model
+        u2_model = u2_model.to("cuda")
+    return green_model, tokenizer, u2_model
 
 def green_score(pred_report, gt_report, categorize, green_model, image_paths):
 
@@ -75,7 +75,7 @@ def green_score(pred_report, gt_report, categorize, green_model, image_paths):
     print("{} - Average GREEN Score: {}".format(categorize[1],mean))
     return mean
 
-def inference(input_image, input_id, tokenizer, lamed_model, temperature=1.0, top_p=0.9):
+def inference(input_image, input_id, tokenizer, u2_model, temperature=1.0, top_p=0.9):
 
     # ## filter out special chars
     # input_str = bleach.clean(input_str)
@@ -85,7 +85,7 @@ def inference(input_image, input_id, tokenizer, lamed_model, temperature=1.0, to
     input_id = tokenizer(input_id, return_tensors="pt")['input_ids'].to("cuda")
     image_pt = torch.from_numpy(input_image).to("cuda")
 
-    generation = lamed_model.generate(image_pt, input_id, max_new_tokens=512,
+    generation = u2_model.generate(image_pt, input_id, max_new_tokens=512,
                                         do_sample=True, top_p=top_p, temperature=temperature)
 
     output_str = tokenizer.batch_decode(generation, skip_special_tokens=True)[0]
@@ -97,7 +97,7 @@ def collate_fn(batch):
         return None
     return torch.utils.data.dataloader.default_collate(batch)
 
-def mrg_annotation(dataloader, categorize, green_model, tokenizer, lamed_model):
+def mrg_annotation(dataloader, categorize, green_model, tokenizer, u2_model):
     
     gt_report = []
     pred_report= []
@@ -115,29 +115,29 @@ def mrg_annotation(dataloader, categorize, green_model, tokenizer, lamed_model):
         image_path = batch["image_path"][0]
         
         image_paths.append(image_path)
-        pred, _ = inference(input_image, input_id, tokenizer, lamed_model)
+        pred, _ = inference(input_image, input_id, tokenizer, u2_model)
         pred_report.append(pred)
         if num == 10:
             break
         # except Exception as e:
         #     print(e)
         num += 1
-    lamed_model.to("cpu")    
+    u2_model.to("cpu")    
     torch.cuda.empty_cache()
     mean_green_score = green_score(pred_report, gt_report, categorize, green_model, image_paths)
-    lamed_model.to("cuda")
+    u2_model.to("cuda")
     return mean_green_score
     
-def woker(green_model, tokenizer, lamed_model, categorize):
+def woker(green_model, tokenizer, u2_model, categorize):
     
-    image_dir = '/import/c4dm-04/siyoul/Med3DLLM/datasets/AMOS-MM/'
-    json_path = '/import/c4dm-04/siyoul/Med3DLLM/datasets/AMOS-MM/dataset.json'
+    image_dir = '/import/c4dm-04/siyoul/u2Tokenizer/datasets/AMOS-MM/'
+    json_path = '/import/c4dm-04/siyoul/u2Tokenizer/datasets/AMOS-MM/dataset.json'
     dataset = MRGDataset(
         image_dir, json_path, tokenizer, 512, \
         categorize=categorize, data_type="validation"
         )
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
-    mean_green_score = mrg_annotation(dataloader, categorize, green_model, tokenizer, lamed_model)
+    mean_green_score = mrg_annotation(dataloader, categorize, green_model, tokenizer, u2_model)
     # mean_green_scores.append(mean_green_score)
     # for categorize, mean_green_score in zip(["Chest","Abdomen","Pelvis"], mean_green_scores):
     return "{} - Average GREEN Score: {}".format(categorize[1], mean_green_score)
@@ -146,14 +146,14 @@ if __name__ == "__main__":
     categorizes = [["findings","chest"], ["findings","abdomen"], ["findings","pelvis"]]
     devices = [0, 1, 2]
     threads = []
-    green_model_path="/import/c4dm-04/siyoul/Med3DLLM/pretrained_models/GREEN-RadLlama2-7b"
-    lamed_model_path = "/import/c4dm-04/siyoul/Med3DLLM/checkpoint/Med3dLLM-1112-MRG-CoT/checkpoint-13179"
+    green_model_path="/import/c4dm-04/siyoul/u2Tokenizer/pretrained_models/GREEN-RadLlama2-7b"
+    u2_model_path = "/import/c4dm-04/siyoul/u2Tokenizer/checkpoint/Med3dLLM-1112-MRG-CoT/checkpoint-13179"
     lora_weight_path = None
-    green_model, tokenizer, lamed_model = load_model(green_model_path, lamed_model_path, lora_weight_path)
-    print(lamed_model_path.split("/")[-2])
+    green_model, tokenizer, u2_model = load_model(green_model_path, u2_model_path, lora_weight_path)
+    print(u2_model_path.split("/")[-2])
     results = []
     for categorize in categorizes:
-        results.append(woker(green_model, tokenizer, lamed_model, categorize))
+        results.append(woker(green_model, tokenizer, u2_model, categorize))
     for result in results:
         print(result)
-    print(lamed_model_path.split("/")[-2])
+    print(u2_model_path.split("/")[-2])

@@ -1,5 +1,5 @@
 from transformers import Phi3Config
 
 
-class LamedPhi3Config(Phi3Config):
-    model_type = "lamed_phi3"
+class u2Phi3Config(Phi3Config):
+    model_type = "u2phi3"

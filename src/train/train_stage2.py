@@ -2,7 +2,7 @@ import os
 from typing import Any, Optional, Union
 import torch
 import numpy as np
-from src.train.dpo_trainer import Mu2DPOTrainer
+from train.dpo_u2trainer import u2DPOTrainer
 from trl.trainer.utils import pad
 from trl.trainer.dpo_config import DPOConfig
 from dataclasses import dataclass, field
@@ -12,9 +12,9 @@ import transformers
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import wandb
 from datasets import Dataset
-from src.utils.linear_3d_transform import Linear3DTransform
+from src.utils.u2Transform import u2Transform
 
-image_transforms = Linear3DTransform(mode='bilinear', data_type="training")
+image_transforms = u2Transform(mode='bilinear', data_type="training")
 def rank0_print(*args):
     if local_rank == 0:
         print(*args)
@@ -30,7 +30,7 @@ class ModelArguments:
     wandb_project_name: Optional[str] = field(default="AMOS-MM", metadata={"help": "wandb project name"})
     wandb_run_name: Optional[str] = field(default="test", metadata={"help": "wandb run name"})
 
-    enable_linear_3d_tokenizer: Optional[bool] = field(default=False, metadata={"help": "Enable linear 3d tokenizer."})
+    enable_u2tokenizer: Optional[bool] = field(default=False, metadata={"help": "Enable linear 3d tokenizer."})
     model_init_kwargs = None
 
 @dataclass
@@ -59,7 +59,7 @@ class TrainingArguments(DPOConfig):
 
     # This is set up to facilitate debugging, pls config these in bash file in training.
     bf16: bool = True
-    output_dir: str = "./LaMed/output/LaMed-pretrain-test"
+    output_dir: str = "./u2/output/u2-pretrain-test"
     num_train_epochs: float = 1
     per_device_train_batch_size: int = 1
     per_device_eval_batch_size: int = 1
@@ -159,8 +159,8 @@ def main():
     image_tokens_num=data_args.proj_out_num
     # train_dataset = CapDataset(data_args, tokenizer, mode='train')
     # eval_dataset = CapDataset(data_args, tokenizer, mode='validation')
-    train_dataset = FusedDataset(data_args.train_base_path, data_args.train_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training", enable_linear_3d_tokenizer=model_args.enable_linear_3d_tokenizer, local_rank=local_rank)
-    eval_dataset = FusedDataset(data_args.val_base_path, data_args.val_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="valuation", enable_linear_3d_tokenizer=model_args.enable_linear_3d_tokenizer, local_rank=local_rank)
+    train_dataset = FusedDataset(data_args.train_base_path, data_args.train_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training", enable_u2tokenizer=model_args.enable_u2tokenizer, local_rank=local_rank)
+    eval_dataset = FusedDataset(data_args.val_base_path, data_args.val_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="valuation", enable_u2tokenizer=model_args.enable_u2tokenizer, local_rank=local_rank)
     def gen_train():
         for idx in range(len(train_dataset)):
             yield train_dataset[idx]
@@ -172,7 +172,7 @@ def main():
     data_collator = DataCollatorForPreference()
     
     rank0_print("="*20 + " Training " + "="*20)
-    trainer = Mu2DPOTrainer(
+    trainer = u2DPOTrainer(
                         model = model,
                         ref_model = model_ref,
                         args=training_args,

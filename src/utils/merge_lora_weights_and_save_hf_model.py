@@ -4,7 +4,7 @@ from typing import Optional
 import transformers
 from transformers import AutoTokenizer
 from dataclasses import dataclass, field
-from src.model.language_model import LamedLlamaForCausalLM
+from src.model.language_model import u2LlamaForCausalLM
 
 @dataclass
 class ModelArguments:
@@ -12,7 +12,7 @@ class ModelArguments:
     model_name_or_path: Optional[str] = field(default="/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/pretrained_model/Asclepius-Llama3-8B", metadata={"help": "Path to the LLM or MLLM. microsoft/Phi-3-mini-4k-instruct, llama-2-7b-chat"})
     model_type: Optional[str] = field(default=None, metadata={"help": "llama2, phi3"})
 
-    model_with_lora: Optional[str] = field(default="./LaMed/output/LaMed-Phi3-4B-finetune-0000/model_with_lora.bin")
+    model_with_lora: Optional[str] = field(default="./u2/output/u2-Phi3-4B-finetune-0000/model_with_lora.bin")
 
     freeze_backbone: bool = field(default=True)
     pretrain_mllm: Optional[str] = field(default=None)
@@ -53,7 +53,7 @@ class TrainingArguments(transformers.TrainingArguments):
     lora_bias: str = "none"
 
     cache_dir: Optional[str] = field(default=None)
-    output_dir: str = "./LaMed/output/LaMed-Phi3-4B-finetune-0000/hf/"
+    output_dir: str = "./u2/output/u2-Phi3-4B-finetune-0000/hf/"
 
 
 def find_all_linear_names(model):
@@ -102,7 +102,7 @@ def main():
     print("vocab_size: ", model_args.vocab_size)
 
     print("Model preparation")
-    model = LamedLlamaForCausalLM.from_pretrained(
+    model = u2LlamaForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir
     )

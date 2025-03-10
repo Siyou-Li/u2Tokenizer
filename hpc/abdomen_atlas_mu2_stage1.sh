@@ -17,9 +17,9 @@ module load miniforge
 module load cuda/11.8.0-gcc-12.2.0
 
 source activate med3dllm
-cd /data/home/qp24681/Med3DLLM
+cd /data/home/qp24681/u2Tokenizer
 export WANDB_API_KEY=00da6485031077ad0ca743ecf911ade54986ffaa
-export PROJECT_PATH=/data/home/qp24681/Med3DLLM
+export PROJECT_PATH=/data/home/qp24681/u2Tokenizer
 export CHECKPOINT_NAME=abdomenatlas_llama3.2_1b_mu2_0226@bs2_acc1_ep4_lr4e6_ws2_fused
 echo $SGE_HGR_gpu 
 CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch --config_file $PROJECT_PATH/config/accelerate_config.yaml\
@@ -33,9 +33,9 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch --config_file $PROJECT_PATH/confi
     --pretrain_vision_model $PROJECT_PATH/pretrained_models/M3D-CLIP/pretrained_ViT.bin \
     --tune_mm_mlp_adapter False \
     --bf16 True \
-    --train_base_path /data/scratch/qp24681/datasets \
+    --train_base_path $PROJECT_PATH/datasets \
     --train_jsonl_path $PROJECT_PATH/datasets/Fused_Dataset/train/abdomen_atlas3_rewrite_train.jsonl \
-    --val_base_path /data/scratch/qp24681/datasets \
+    --val_base_path $PROJECT_PATH/datasets \
     --val_jsonl_path $PROJECT_PATH/datasets/Fused_Dataset/val/amos_mm_findings.jsonl \
     --output_dir $PROJECT_PATH/checkpoint/$CHECKPOINT_NAME \
     --num_train_epochs 4 \
@@ -62,5 +62,5 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch --config_file $PROJECT_PATH/confi
     --freeze_vision_tower False \
     --freeze_backbone False \
     --model_max_length 1024 \
-    --enable_linear_3d_tokenizer True \
+    --enable_u2tokenizer True \
     --enable_mu True \
