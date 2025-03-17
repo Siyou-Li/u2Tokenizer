@@ -17,4 +17,3 @@ f = open(f"{base_dir}/config/project.json", encoding='utf-8')
 config = json.load(f)
 
 config["project_path"] = base_dir
-config.project_path = base_dir
