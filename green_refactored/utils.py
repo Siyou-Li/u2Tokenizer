@@ -179,7 +179,7 @@ def compute_largest_cluster(sentences):
     return embeddings, sentences_of_largest_cluster
 
 
-model = SentenceTransformer("/data/huanan/paraphrase-mpnet-base-v2")
+model = SentenceTransformer("/data/huanan/models/paraphrase-mpnet-base-v2")
 def compute_kmeans(sentences):
     """
     Computes K-means clustering for a list of sentences by generating their embeddings, normalizing the embeddings, and determining the optimal number of clusters using binary search.
