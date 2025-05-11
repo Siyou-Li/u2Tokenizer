@@ -18,6 +18,7 @@
 ## 🚀 Introduction
 
 <img src="./assets/ullm.svg">
+
 we propose $\mu^2$ LLM, a **mu**ltiscale **mu**ltimodal large language models for radiology report generation (RRG) tasks. The novel ${\mu}^2$ Tokenizer, as an intermediate layer, integrates multi-modal features from the multiscale visual tokenizer and the text tokenizer, then enhances report generation quality through direct preference optimization (DPO), guided by GREEN-RedLlama. Experimental results on four large CT image-report medical datasets demonstrate that our method outperforms existing approaches, highlighting the potential of our fine-tuned $\mu^2$ LLMs on limited data for RRG tasks.
 
 ## 🤖 Model Setup
