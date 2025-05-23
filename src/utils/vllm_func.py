@@ -49,6 +49,12 @@ The original CT report is:
 "{raw_text}"
 """.strip()
 
+TRANSLATION = """
+This is an {source_lang} to {target_lang} translation, please provide the {target_lang} translation for this text. \
+Do not provide any explanations or text apart from the translation.
+{source_lang}: {source_input}
+""".strip()
+
 @backoff.on_exception(backoff.expo, openai.RateLimitError)
 def rewrite(raw_text, prompt = REWRITE_PROMPT):
     response = client.chat.completions.create(model=model_name, messages=[
@@ -73,3 +79,23 @@ def generate_qa(raw_text):
         print(e)
         return []
     return qa_pairs
+
+@backoff.on_exception(backoff.expo, openai.RateLimitError)
+def translation(source_input, target_lang, source_lang):
+    
+    response = client.chat.completions.create(model=model_name, messages=[
+        {
+            'role': 'user',
+            'content': TRANSLATION.format(source_input=source_input, target_lang=target_lang, source_lang=source_lang),
+        }],
+        max_tokens=8192,
+        temperature=0.7,
+        top_p=0.8,
+        presence_penalty=1.5,
+        extra_body={
+            "top_k": 20, 
+            "chat_template_kwargs": {"enable_thinking": False},
+        }
+            
+    ).choices[0].message.content
+    return response
