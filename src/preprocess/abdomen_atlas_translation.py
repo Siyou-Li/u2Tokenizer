@@ -21,8 +21,12 @@ with open(csv_file_path, 'r') as f:
 
 if not os.path.exists(os.path.dirname(output_file_path)):
     os.makedirs(os.path.dirname(output_file_path))
-with open(output_file_path, 'w') as f:
+i = 0
+with open(output_file_path, 'a') as f:
     for idx, row in tqdm(raw_data.iterrows()):
+        if i < 1308:
+            i += 1
+            continue
         image = row["BDMAP ID"]
         structured_report = row["structured report"]
         narrative_report = row["narrative report"]
