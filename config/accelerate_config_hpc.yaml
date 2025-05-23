@@ -1,7 +1,7 @@
 compute_environment: LOCAL_MACHINE
 debug: false
 deepspeed_config:
-  deepspeed_config_file: /import/c4dm-04/siyoul/Med3DLLM/config/ds_config.json
+  deepspeed_config_file: /import/c4dm-04/siyoul/u2Tokenizer/config/ds_config.json
   zero3_init_flag: false
 distributed_type: DEEPSPEED
 downcast_bf16: 'no'
@@ -9,7 +9,7 @@ enable_cpu_affinity: false
 machine_rank: 0
 main_training_function: main
 num_machines: 1
-num_processes: 4
+num_processes: 2
 rdzv_backend: static
 same_network: true
 tpu_env: []
