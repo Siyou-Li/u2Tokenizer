@@ -16,8 +16,8 @@ from src.preprocess.start_vllm_server import start_vllm_server
 import itertools
 
 base_path = config["project_path"]
-test_mode = True
-batch_size = 2
+test_mode = False
+batch_size = 8
 
 # CT-RATE Training
 def ct_rate_vqa_thinking_synthesis(csv_file_path, output_file_path, data_type="train"):
@@ -31,13 +31,13 @@ def ct_rate_vqa_thinking_synthesis(csv_file_path, output_file_path, data_type="t
     if not os.path.exists(os.path.dirname(output_file_path)):
         os.makedirs(os.path.dirname(output_file_path))
 
-    with open(output_file_path, 'a') as f:
+    with open(output_file_path, 'w') as f:
         # process in batch_size row batches
         for i in tqdm(range(0, len(raw_data), batch_size)):
             batch = raw_data.iloc[i:i+batch_size]
             findings = batch["Findings_EN"].tolist()
             
-            image_paths = [os.path.join(f"CT-RATE/dataset/{}".format(data_type), image_name.split("_")[0] + "_" + image_name.split("_")[1] + "/" + image_name.split("_")[0] + "_" + image_name.split("_")[1] + "_" + image_name.split("_")[2] + "/" + image_name) for image_name in batch["VolumeName"].tolist()]
+            image_paths = [os.path.join("CT-RATE/dataset/{}".format(data_type), image_name.split("_")[0] + "_" + image_name.split("_")[1] + "/" + image_name.split("_")[0] + "_" + image_name.split("_")[1] + "_" + image_name.split("_")[2] + "/" + image_name) for image_name in batch["VolumeName"].tolist()]
             try:
                 outputs = vqa_thinking_batch(findings, image_paths)
                 for item in outputs:
@@ -79,7 +79,7 @@ def abdomen_atlas_vqa_thinking_synthesis(csv_file_path, output_file_path):
     if not os.path.exists(os.path.dirname(output_file_path)):
         os.makedirs(os.path.dirname(output_file_path))
 
-    with open(output_file_path, 'a') as f:
+    with open(output_file_path, 'w') as f:
         # process in batch_size row batches
         for i in tqdm(range(0, len(raw_data), batch_size)):
             batch = raw_data.iloc[i:i+batch_size]
@@ -122,7 +122,7 @@ def amos_mm_vqa_thinking_synthesis(json_file_path, findings_file_path, data_type
     mrg_type = ["chest", "abdomen","pelvis"]
     raw_data = data[data_type]
 
-    with open(findings_file_path, 'a') as f:  
+    with open(findings_file_path, 'w') as f:  
         # process in 8 row batches
         for i in tqdm(range(0, len(raw_data), batch_size)):
             batch = raw_data[i:i+batch_size]

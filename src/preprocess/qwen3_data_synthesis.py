@@ -49,7 +49,6 @@ os.environ["TORCHDYNAMO_VERBOSE"] = "1"
 
 gpu_num = torch.cuda.device_count()
 model_name = "pretrained_models/Qwen3-235B-A22B-GPTQ-Int4"
-model_name = "pretrained_models/Qwen3-8B"
 # Configurae the sampling parameters (for thinking mode)
 sampling_params = SamplingParams(temperature=0.6, top_p=0.95, top_k=20, max_tokens=4096)
 
