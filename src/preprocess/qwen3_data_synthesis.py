@@ -127,9 +127,10 @@ QUESTION_PROMPT_TPL = """
 
 THINKING_PROMPT_TPL = """
 You are a radiology medicine expert.
-Your task is to answer a radiology medicine question according to the report that was shared here.
-For your answer, please clearly indicate your logical and objective reasoning process (“Thinking”) and provide the correct answers or conclusions (“Answer”).
-Your response will be used to guide and improve the training of a large language model for radiology medicine. 
+Your task is to answer the following radiology medicine question, using the patient’s medical record report provided below.
+When writing your thought process, imagine you are directly reviewing the patient’s radiology images (do not mention the report), and describe your logical reasoning step by step as an expert would.
+Then, provide your final, correct answer to the question.
+Your response will be used to guide and improve the training of a multimodal large language model for radiology medicine images.
 And here is radiology report what you can see:
 ```
 {report}
@@ -274,6 +275,8 @@ if __name__ == "__main__":
     findings = [finding_1, finding_2]
     results = vqa_thinking_batch(findings, ["a.png", "b.png"])
     for result in results:
+        print("[*]Report:")
+        print(result["report"])
         print("[*]System Thinking:")
         print(result["system_thinking"])
         print("[*]Question:")

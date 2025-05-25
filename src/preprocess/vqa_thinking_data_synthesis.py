@@ -17,10 +17,10 @@ import itertools
 
 base_path = config["project_path"]
 test_mode = True
-batch_size = 8
+batch_size = 2
 
 # CT-RATE Training
-def ct_rate_vqa_thinking_synthesis(csv_file_path, output_file_path):
+def ct_rate_vqa_thinking_synthesis(csv_file_path, output_file_path, data_type="train"):
     """
     Synthesize the CT-RATE dataset using VQA thinking.
     """
@@ -36,7 +36,8 @@ def ct_rate_vqa_thinking_synthesis(csv_file_path, output_file_path):
         for i in tqdm(range(0, len(raw_data), batch_size)):
             batch = raw_data.iloc[i:i+batch_size]
             findings = batch["Findings_EN"].tolist()
-            image_paths = [os.path.join("CT-RATE/dataset/valid", image_name.split("_")[0] + "_" + image_name.split("_")[1] + "/" + image_name.split("_")[0] + "_" + image_name.split("_")[1] + "_" + image_name.split("_")[2] + "/" + image_name) for image_name in batch["VolumeName"].tolist()]
+            
+            image_paths = [os.path.join(f"CT-RATE/dataset/{}".format(data_type), image_name.split("_")[0] + "_" + image_name.split("_")[1] + "/" + image_name.split("_")[0] + "_" + image_name.split("_")[1] + "_" + image_name.split("_")[2] + "/" + image_name) for image_name in batch["VolumeName"].tolist()]
             try:
                 outputs = vqa_thinking_batch(findings, image_paths)
                 for item in outputs:
@@ -61,13 +62,13 @@ def ct_rate_vqa_thinking_synthesis(csv_file_path, output_file_path):
     print("Successfully synthesized the CT-RATE dataset to {} using VQA thinking.".format(output_file_path))
     
 # ## CT-RATE Validation
-# csv_file_path = os.path.join(base_path, "datasets/CT-RATE/dataset/radiology_text_reports/validation_reports.csv")
-# output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/train/ct_rate_vqa_thinking.jsonl")
-# ct_rate_vqa_thinking_synthesis(csv_file_path, output_file_path)
-# ## CT-RATE Training
-# csv_file_path = os.path.join(base_path, "datasets/CT-RATE/dataset/radiology_text_reports/train_reports.csv")
-# output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/val/ct_rate_vqa_thinking.jsonl")
-# ct_rate_vqa_thinking_synthesis(csv_file_path, output_file_path)
+csv_file_path = os.path.join(base_path, "datasets/CT-RATE/dataset/radiology_text_reports/validation_reports.csv")
+output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/val/ct_rate_vqa_thinking.jsonl")
+ct_rate_vqa_thinking_synthesis(csv_file_path, output_file_path, data_type="valid")
+## CT-RATE Training
+csv_file_path = os.path.join(base_path, "datasets/CT-RATE/dataset/radiology_text_reports/train_reports.csv")
+output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/train/ct_rate_vqa_thinking.jsonl")
+ct_rate_vqa_thinking_synthesis(csv_file_path, output_file_path, data_type="train")
 
 
 # AbdomenAtlas3.0
@@ -123,9 +124,9 @@ def amos_mm_vqa_thinking_synthesis(json_file_path, findings_file_path, data_type
 
     with open(findings_file_path, 'a') as f:  
         # process in 8 row batches
-        for i in tqdm(range(0, len(raw_data), 8)):
-            batch = raw_data[i:i+8]
-            image_paths = [os.path.join("AMOS-MM", image[2:]) for image in batch["image"]]
+        for i in tqdm(range(0, len(raw_data), batch_size)):
+            batch = raw_data[i:i+batch_size]
+            image_paths = [os.path.join("AMOS-MM", item["image"][2:]) for item in batch]
             findings = [item["labels"]["report"]["findings"] for item in batch]
 
             image_paths_list = []
@@ -133,7 +134,7 @@ def amos_mm_vqa_thinking_synthesis(json_file_path, findings_file_path, data_type
 
             for image_path, finding in zip(image_paths, findings):
                 for loc in mrg_type:
-                    if findings[loc] != "":
+                    if finding[loc] != "":
                         image_paths_list.append(image_path)
                         findings_list.append(finding[loc])
 
