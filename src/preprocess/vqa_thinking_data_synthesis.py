@@ -17,7 +17,7 @@ import itertools
 
 base_path = config["project_path"]
 test_mode = False
-batch_size = 1
+batch_size = 2
 # CT-RATE Training
 def ct_rate_vqa_thinking_synthesis(csv_file_path, output_file_path, data_type="train"):
     """
@@ -52,6 +52,7 @@ def ct_rate_vqa_thinking_synthesis(csv_file_path, output_file_path, data_type="t
                         "answer": item["answer"],
                     }, ensure_ascii=False)
                     f.write(f"{line}\n")
+                    f.flush()
             except Exception as e:
                 print(e)
                 continue
@@ -99,6 +100,7 @@ def abdomen_atlas_vqa_thinking_synthesis(csv_file_path, output_file_path):
                         "answer": item["answer"],
                     }, ensure_ascii=False)
                     f.write(f"{line}\n")
+                    f.flush()
             except Exception as e:
                 print(e)
                 continue
@@ -151,6 +153,7 @@ def amos_mm_vqa_thinking_synthesis(json_file_path, findings_file_path, data_type
                     "answer": item["answer"],
                 }, ensure_ascii=False)
                 f.write(f"{line}\n")
+                f.flush()
             global test_mode
             if test_mode:
                 break
