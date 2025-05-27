@@ -12,7 +12,5 @@ config/ds_config_zero3.json
 config/ds_config.json
 config/project.json
 /sync_models/
-0.nii.gz
-amos_0001.nii.gz
-amos_7284.nii.gz
+log/
 amos_evaluation_results.txt
