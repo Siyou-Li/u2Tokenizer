@@ -9,6 +9,8 @@
 #$ -N vqa_thinking_data_synthesis
 #$ -l rocky
 #$ -m beas
+#$ -o log/
+
 set -e
 
 bash

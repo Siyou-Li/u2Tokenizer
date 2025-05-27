@@ -8,52 +8,22 @@ from openai import OpenAI
 from vllm import LLM, SamplingParams
 from transformers import AutoTokenizer
 import torch
+import json
 import re
 import os
+from tqdm import tqdm
 
 # Remove vLLM specific environment variables
 os.environ["TORCH_LOGS"] = "+dynamo"
 os.environ["TORCHDYNAMO_VERBOSE"] = "1"
-
-# # Initialize OpenAI client for local model
-# client = OpenAI(
-#     base_url="http://localhost:8088/v1",
-#     api_key="not-needed"  # API key not needed for local model
-# )
-
-# # Remove vLLM specific configurations
-# gpu_num = torch.cuda.device_count()
-# # model_name = "pretrained_models/Qwen3-235B-A22B-GPTQ-Int4"
-# model_name = "pretrained_models/Qwen3-8B"
-
-# def synthesize_data(prompt, enable_thinking=True):
-#     # Prepare the input to the model
-#     messages = [
-#         {"role": "user", "content": prompt}
-#     ]
-
-#     # Generate outputs using OpenAI client
-#     response = client.chat.completions.create(
-#         model=model_name,  # Model name doesn't matter for local deployment
-#         messages=messages,
-#         max_tokens=8192,
-#         temperature=0.7,
-#         top_p=0.8,
-#         presence_penalty=1.5,
-#         extra_body={
-#             "top_k": 20,
-#             "chat template kwargs": {"enable thinking": True},
-#         })
-
-#     return response.choices[0].message.reasoning_content, response.choices[0].message.content
-
 gpu_num = torch.cuda.device_count()
 model_name = "pretrained_models/Qwen3-235B-A22B-GPTQ-Int4"
+
 # Configurae the sampling parameters (for thinking mode)
-sampling_params = SamplingParams(temperature=0.6, top_p=0.95, top_k=20, max_tokens=4096)
+sampling_params = SamplingParams(temperature=0.6, top_p=0.95, top_k=20, max_tokens=40960)
 
 # Initialize the vLLM engine
-llm = LLM(model=model_name, tensor_parallel_size=gpu_num)
+llm = LLM(model=model_name, tensor_parallel_size=gpu_num, enable_expert_parallel=True)
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
 def synthesize_data(prompt, enable_thinking=True):
@@ -71,16 +41,16 @@ def synthesize_data(prompt, enable_thinking=True):
 
     # Generate outputs
     outputs = llm.generate([text], sampling_params)[0].outputs[0].text
-    pattern = r'<think>\n(.*?)\n</think>\s*(.*)'
+    pattern = re.compile(r"<think>\s*(.*?)\s*</think>\s*(.*)", re.DOTALL)
 
-    m = re.search(pattern, outputs, flags=re.DOTALL)
+    m = pattern.search(outputs)
     if m:
         thinking = m.group(1).strip()
         output   = m.group(2).strip()
     else:
         thinking = ""
         output   = outputs
-    return [(thinking, output)]
+    return thinking, output
 
 def synthesize_data_batch(prompts, enable_thinking=True):
     """
@@ -154,21 +124,16 @@ answer_pattern = r"Answer: ?([^\n]*)"
 def vqa_thinking(finding):
     # 1. generate questions
     prompt = QUESTION_PROMPT_TPL.format(report=finding)
-    _, output = synthesize_data(prompt)[0]
+    _, output = synthesize_data(prompt, enable_thinking=True)
     questions = re.findall(question_pattern, output, flags=re.M|re.S)
     
     # 2. generate thinking
     system_thinkings = []
     thinkings = []
     answers = []
-    prompts = []
     for item in questions:
         prompt = THINKING_PROMPT_TPL.format(report=finding, question=item.strip())
-        prompts.append(prompt)
-    
-    results = synthesize_data_batch(prompts, enable_thinking=True)
-    for result in results:
-        system_thinking, output = result
+        system_thinking, output= synthesize_data(prompt, enable_thinking=True)
         system_thinkings.append(system_thinking)
         thinkings.append(re.findall(thinking_pattern, output, flags=re.M|re.S)[-1])
         answers.append(re.findall(answer_pattern, output, flags=re.M|re.S)[-1])
@@ -181,7 +146,8 @@ def vqa_thinking(finding):
                 "system_thinking": system_thinking,
                 "question": question,
                 "thinking": thinking,
-                "answer": answer
+                "answer": answer,
+                "report": finding,
             })
 
     return results
@@ -257,14 +223,70 @@ def vqa_thinking_batch(findings, images):
         results.extend(vqa_thinking.format_results())
     return results
 
+
+TRANSLATION = """
+This is an {source_lang} to {target_lang} translation, please provide the {target_lang} translation for this text. \
+Do not provide any explanations or text apart from the translation.
+{source_lang}: {source_input}
+""".strip()
+
+def translation(source_input, target_lang, source_lang, enable_thinking=False):
+    messages=[
+        {
+            'role': 'user',
+            'content': TRANSLATION.format(source_input=source_input, target_lang=target_lang, source_lang=source_lang),
+        }]
+    text = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,
+        enable_thinking=enable_thinking,  # Set to False to strictly disable thinking
+    )
+    # Generate outputs
+    outputs = llm.generate([text], sampling_params)[0].outputs[0].text
+    pattern = r'<think>\n(.*?)\n</think>\s*(.*)'
+
+    m = re.search(pattern, outputs, flags=re.DOTALL)
+    if m:
+        thinking = m.group(1).strip()
+        output   = m.group(2).strip()
+    else:
+        thinking = ""
+        output   = outputs
+    return output
+
+
+def vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path):
+    raw_data = []
+    with open(jsonl_file_path, 'r') as f:
+        for line in f:
+            try:
+                    raw_data.append(json.loads(line))
+            except json.JSONDecodeError:
+                print("Error loading json line: ", line)
+    with open(output_file_path, 'w') as f:
+        
+        for item in tqdm(raw_data):
+            translated_data = {}
+            translated_data["image"] = item["image"]
+            translated_data["dataset"] = item["dataset"]
+            translated_data["task_type"] = item["task_type"]
+            translated_data["synthesis"] = item["synthesis"]
+            try:
+                translated_data["question"] = translation(item["question"], "Chinese", "English")
+                translated_data["answer"] = translation(item["answer"], "Chinese", "English")
+                translated_data["report"] = translation(item["report"], "Chinese", "English")
+                translated_data["system_thinking"] = translation(item["system_thinking"], "Chinese", "English")
+                translated_data["thinking"] = translation(item["thinking"], "Chinese", "English")
+                f.write(json.dumps(translated_data, ensure_ascii=False) + "\n")
+            except Exception as e:
+                print(e)
+                continue
+    f.close()
+    print("Successfully translated the VQA thinking dataset to {}.".format(output_file_path))
+
 if __name__ == "__main__":
     # # Example usage
-    # prompt = "Give me a short introduction to large language models."
-    # thinking, output = synthesize_data(prompt)
-    # print("Thinking:")
-    # print(thinking)
-    # print("Output:")
-    # print(output)
     finding_1 = """
     Multiple venous collaterals are noted in the anterior left chest wall, connecting to the anterior jugular vein at the right sternoclavicular junction, with a collapsed left subclavian vein suggestive of chronic occlusion; trachea and bronchi are patent; calcific plaques in the aortic arch are observed; mediastinal vascular structures, heart size, and thoracic aorta diameter are normal; no pericardial effusion or thickening; normal esophagus with no significant wall thickening; no enlarged lymph nodes in prevascular, pretracheal, subcarinal, or hilar regions; linear and subsegmental atelectasis, bronchial wall thickening, peribronchial tree-like reticulonodular densities, and minimal consolidation in the bilateral lower lobes suggestive of an infectious process; atrophic left kidney partially seen, right kidney not evaluable, normal other upper abdominal organs with no space-occupying lesions in the visible liver or bilateral adrenal glands; and thoracic vertebrae show anterior osteophyte extensions.
     """
@@ -272,7 +294,8 @@ if __name__ == "__main__":
     Give me a short introduction to large language models.
     """
     findings = [finding_1, finding_2]
-    results = vqa_thinking_batch(findings, ["a.png", "b.png"])
+    results = vqa_thinking_batch(findings, images=["image1.png", "image2.png"])
+    print(results)
     for result in results:
         print("[*]Report:")
         print(result["report"])
@@ -285,3 +308,16 @@ if __name__ == "__main__":
         print("[*]Answer:")
         print(result["answer"])
         print("-" * 50)
+
+    # # Example usage of translation
+    # source_input = "你好，世界！"
+    # target_lang = "English"
+    # source_lang = "Chinese"
+    # translated_text = translation(source_input, target_lang, source_lang, enable_thinking=False)
+    # print("[*]Translated Text:")
+    # print(translated_text)
+
+    # Example usage of vqa_thinking_translation_synthesis
+    # jsonl_file_path = "datasets/Fused_Dataset/val/amos_mm_findings_vqa_thinking.jsonl"
+    # output_file_path = "datasets/Fused_Dataset/chinese/val/amos_mm_findings_vqa_thinking.jsonl"
+    # vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path)
