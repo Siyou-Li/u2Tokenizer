@@ -17,8 +17,9 @@ from tqdm import tqdm
 os.environ["TORCH_LOGS"] = "+dynamo"
 os.environ["TORCHDYNAMO_VERBOSE"] = "1"
 gpu_num = torch.cuda.device_count()
-model_name = "pretrained_models/Qwen3-235B-A22B-GPTQ-Int4"
 
+model_name = "pretrained_models/Qwen3-235B-A22B-GPTQ-Int4"
+#model_name = "pretrained_models/Qwen3-30B-A3B-GPTQ-Int4"
 # Configurae the sampling parameters (for thinking mode)
 sampling_params = SamplingParams(temperature=0.6, top_p=0.95, top_k=20, max_tokens=40960)
 
@@ -255,35 +256,6 @@ def translation(source_input, target_lang, source_lang, enable_thinking=False):
         output   = outputs
     return output
 
-
-def vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path):
-    raw_data = []
-    with open(jsonl_file_path, 'r') as f:
-        for line in f:
-            try:
-                    raw_data.append(json.loads(line))
-            except json.JSONDecodeError:
-                print("Error loading json line: ", line)
-    with open(output_file_path, 'w') as f:
-        
-        for item in tqdm(raw_data):
-            translated_data = {}
-            translated_data["image"] = item["image"]
-            translated_data["dataset"] = item["dataset"]
-            translated_data["task_type"] = item["task_type"]
-            translated_data["synthesis"] = item["synthesis"]
-            try:
-                translated_data["question"] = translation(item["question"], "Chinese", "English")
-                translated_data["answer"] = translation(item["answer"], "Chinese", "English")
-                translated_data["report"] = translation(item["report"], "Chinese", "English")
-                translated_data["system_thinking"] = translation(item["system_thinking"], "Chinese", "English")
-                translated_data["thinking"] = translation(item["thinking"], "Chinese", "English")
-                f.write(json.dumps(translated_data, ensure_ascii=False) + "\n")
-            except Exception as e:
-                print(e)
-                continue
-    f.close()
-    print("Successfully translated the VQA thinking dataset to {}.".format(output_file_path))
 
 if __name__ == "__main__":
     # # Example usage
