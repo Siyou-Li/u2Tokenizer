@@ -3,7 +3,7 @@ import os
 from config import config
 import json
 from tqdm import tqdm
-
+from concurrent.futures import ThreadPoolExecutor
 
 base_path = config["project_path"]
 
@@ -23,12 +23,16 @@ def vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path):
             translated_data["dataset"] = item["dataset"]
             translated_data["task_type"] = item["task_type"]
             translated_data["synthesis"] = item["synthesis"]
+
+            translated_data["report"] = item["report"]
+            translated_data["system_thinking"] = item["system_thinking"]
+            translated_data["thinking"] = item["thinking"]
             try:
                 translated_data["question"] = translation(item["question"], "Chinese", "English")
                 translated_data["answer"] = translation(item["answer"], "Chinese", "English")
-                translated_data["report"] = translation(item["report"], "Chinese", "English")
-                translated_data["system_thinking"] = translation(item["system_thinking"], "Chinese", "English")
-                translated_data["thinking"] = translation(item["thinking"], "Chinese", "English")
+                # translated_data["report"] = translation(item["report"], "Chinese", "English")
+                # translated_data["system_thinking"] = translation(item["system_thinking"], "Chinese", "English")
+                # translated_data["thinking"] = translation(item["thinking"], "Chinese", "English")
                 f.write(json.dumps(translated_data, ensure_ascii=False) + "\n")
                 f.flush()
             except Exception as e:
@@ -37,22 +41,13 @@ def vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path):
     f.close()
     print("Successfully translated the VQA thinking dataset to {}.".format(output_file_path))
 
-## VQA Thinking Translation Synthesis
-# CT-RATE Translation
-jsonl_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking/train/ct_rate_vqa_thinking.jsonl")
-output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/chinese/train/ct_rate_vqa_thinking.jsonl")
-vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path)
-jsonl_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking/val/ct_rate_vqa_thinking.jsonl")
-output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/chinese/val/ct_rate_vqa_thinking.jsonl")
-vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path)
-# AbdomenAtlas3.0 Translation
-jsonl_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking/train/abdomen_atlas3_vqa_thinking.jsonl")
-output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/chinese/train/abdomen_atlas3_vqa_thinking.jsonl")
-vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path)
-# AMOS-MM Translation
-jsonl_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking/train/amos_mm_findings_vqa_thinking.jsonl")
-output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/chinese/train/amos_mm_findings_vqa_thinking.jsonl")
-vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path)
-jsonl_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking/val/amos_mm_findings_vqa_thinking.jsonl")
-output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/chinese/val/amos_mm_findings_vqa_thinking.jsonl")
-vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path)
+# use arguments to run the script
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Translate VQA thinking dataset to English.")
+    parser.add_argument("--jsonl_file_path", type=str, required=True, help="Path to the input JSONL file.")
+    parser.add_argument("--output_file_path", type=str, required=True, help="Path to the output JSONL file.")
+    
+    args = parser.parse_args()
+    
+    vqa_thinking_translation_synthesis(args.jsonl_file_path, args.output_file_path)
