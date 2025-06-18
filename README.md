@@ -9,9 +9,7 @@
 [![PWC](https://img.shields.io/badge/%F0%9F%8C%8E%20Website-Official%20Page-blue)]()
 [![PWC](https://img.shields.io/badge/HuggingFace-Demo-Green)]()
 ---
-```
-🎉🎉🎉 Our Paper accepted by the 28th conference of The Medical Image Computing and Computer Assisted Intervention Society (MICCAI). See you in Daejeon, Korea from September 23-27, 2025.
-```
+`🎉🎉🎉 Our Paper accepted by the 28th conference of The Medical Image Computing and Computer Assisted Intervention Society (MICCAI). See you in Daejeon, Korea from September 23-27, 2025.`
 
 <p align="center">
   <img src="./assets/cover.svg">
