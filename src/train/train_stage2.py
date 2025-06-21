@@ -6,7 +6,7 @@ from train.dpo_u2trainer import u2DPOTrainer
 from trl.trainer.utils import pad
 from trl.trainer.dpo_config import DPOConfig
 from dataclasses import dataclass, field
-from src.dataset.fused_dataset_dpo import FusedDataset
+from src.dataset import FusedDataset
 from transformers.data.data_collator import DataCollatorMixin
 import transformers
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -159,8 +159,32 @@ def main():
     image_tokens_num=data_args.proj_out_num
     # train_dataset = CapDataset(data_args, tokenizer, mode='train')
     # eval_dataset = CapDataset(data_args, tokenizer, mode='validation')
-    train_dataset = FusedDataset(data_args.train_base_path, data_args.train_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training", enable_u2tokenizer=model_args.enable_u2tokenizer, local_rank=local_rank)
-    eval_dataset = FusedDataset(data_args.val_base_path, data_args.val_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="valuation", enable_u2tokenizer=model_args.enable_u2tokenizer, local_rank=local_rank)
+    train_dataset = FusedDataset(
+        data_args.train_base_path,
+        data_args.train_jsonl_path,
+        tokenizer,
+        max_length=max_length,
+        image_tokens_num=image_tokens_num,
+        data_type="training",
+        enable_u2tokenizer=model_args.enable_u2tokenizer,
+        local_rank=local_rank,
+        use_chat_template=False,
+        dpo_mode=True,
+        return_image=False,
+    )
+    eval_dataset = FusedDataset(
+        data_args.val_base_path,
+        data_args.val_jsonl_path,
+        tokenizer,
+        max_length=max_length,
+        image_tokens_num=image_tokens_num,
+        data_type="valuation",
+        enable_u2tokenizer=model_args.enable_u2tokenizer,
+        local_rank=local_rank,
+        use_chat_template=False,
+        dpo_mode=True,
+        return_image=False,
+    )
     def gen_train():
         for idx in range(len(train_dataset)):
             yield train_dataset[idx]

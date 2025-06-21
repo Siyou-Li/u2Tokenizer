@@ -137,7 +137,7 @@ async def main(args):
     pbar.close()
 
     if dropped_records:
-        with open(f"{args.JSONLFile.replace(".jsonl","")}_dropped.txt", "w") as f:
+        with open(f"{args.JSONLFile.replace('.jsonl','')}_dropped.txt", "w") as f:
             f.write(repr(dropped_records))
             f.flush()
 
@@ -209,7 +209,7 @@ async def main(args):
         pbar.update(1)
     pbar.close()
 
-    with open(f"{args.JSONLFile.replace(".jsonl","")}_report_thinking.jsonl", "w") as f:
+    with open(f"{args.JSONLFile.replace('.jsonl','')}_report_thinking.jsonl", "w") as f:
         for item in full_report:
             f.write(item + "\n")
             f.flush()

@@ -285,36 +285,3 @@ def collate_fn(batch):
         return None
     return torch.utils.data.dataloader.default_collate(batch)
 
-if __name__ == '__main__':
-    image_dir = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/datasets/AMOS-MM/'
-    json_path = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/datasets/AMOS-MM/dataset.json'
-    
-    output_size = (-1, 256, 256)
-    patch_size = (4, 16, 16)
-    mode = 'trilinear'
-
-    from transformers import AutoTokenizer
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        "/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/pretrained_model/Asclepius-Llama2-7B",
-        cache_dir=None,
-        model_max_length=2048,
-        padding_side="left",
-        use_fast=False,
-    )
-    dataset = MRGMIXDatasets(image_dir, json_path, output_size, patch_size, mode, tokenizer, 2048, data_type="training")
-    #dataset = VQADataset(image_dir, json_path, output_size, patch_size, mode, tokenizer, max_length=2048, image_tokens_num=256, data_type="training")
-    print(len(dataset))
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True, collate_fn=collate_fn)
-    for batch in dataloader:
-        if batch is None:
-            continue
-        rets = batch
-        print(rets["image_path"])
-        print(rets["image"].shape)
-        # save the batch to a file
-        # torch.save(rets, "./example_batch.pt")
-        # rets = torch.load("./example_batch.pt")
-        # print(rets["image_path"])
-        break
-    
