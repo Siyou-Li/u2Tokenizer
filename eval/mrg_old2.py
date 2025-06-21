@@ -4,7 +4,7 @@ import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
-from src.dataset.fused_dataset_m3d import FusedDataset
+from src.dataset import FusedDataset
 from src.dataset.amos_mm_monai_dataset import MRGDataset
 from tqdm import tqdm
 from src.utils.utils import normalize

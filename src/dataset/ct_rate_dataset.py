@@ -167,29 +167,3 @@ def collate_fn(batch):
         return None
     return torch.utils.data.dataloader.default_collate(batch)
 
-if __name__ == '__main__':
-    image_dir = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/Video-LLaVA/dataset/CT-RATE/dataset/train'
-    json_path = '/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/datasets/CT-RATE/dataset/radiology_text_reports/train.json'
-    output_size = (32, 64, 64)
-    patch_size = (4, 16, 16)
-    mode = 'trilinear'
-
-    from transformers import AutoTokenizer
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        "/pfs/mt-1oY5F7/luoyihao/project/multimodal/AMOS-MM/M3D/pretrained_model/Asclepius-Llama2-7B",
-        cache_dir=None,
-        model_max_length=2048,
-        padding_side="left",
-        use_fast=False,
-    )
-    dataset = CapDataset(image_dir, json_path, output_size, patch_size, mode, tokenizer, 2048)
-    print(len(dataset))
-    dataloader = DataLoader(dataset, batch_size=4, shuffle=True, collate_fn=collate_fn)
-    for batch in dataloader:
-        if batch is None:
-            continue
-        rets = batch
-        print(rets["image"].dtype)
-        print(rets["input_id"].dtype)
-        break

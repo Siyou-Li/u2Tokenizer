@@ -1,6 +1,4 @@
 
-import sys
-print(sys.path)
 import logging
 from typing import Optional, List, Dict
 import numpy as np
@@ -8,7 +6,7 @@ import torch
 import transformers
 from transformers import AutoTokenizer, LlamaForCausalLM, AutoModelForCausalLM
 from dataclasses import dataclass, field
-from src.dataset.fused_dataset_m3d import FusedDataset
+from src.dataset import FusedDataset
 from src.dataset.multi_dataset import UniDatasets, CapDataset, TextDatasets, VQADataset
 from src.model.language_model import u2LlamaForCausalLM, u2Phi3ForCausalLM
 from src.train.sft_u2Trainer import u2Trainer
@@ -365,8 +363,28 @@ def main():
     image_tokens_num=data_args.proj_out_num
     # train_dataset = CapDataset(data_args, tokenizer, mode='train')
     # eval_dataset = CapDataset(data_args, tokenizer, mode='validation')
-    train_dataset = FusedDataset(data_args.train_base_path, data_args.train_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="training", enable_u2tokenizer=model_args.enable_u2tokenizer, local_rank=local_rank)
-    eval_dataset = FusedDataset(data_args.val_base_path, data_args.val_jsonl_path, tokenizer, max_length=max_length, image_tokens_num=image_tokens_num, data_type="valuation", enable_u2tokenizer=model_args.enable_u2tokenizer, local_rank=local_rank)
+    train_dataset = FusedDataset(
+        data_args.train_base_path,
+        data_args.train_jsonl_path,
+        tokenizer,
+        max_length=max_length,
+        image_tokens_num=image_tokens_num,
+        data_type="training",
+        enable_u2tokenizer=model_args.enable_u2tokenizer,
+        local_rank=local_rank,
+        use_chat_template=False,
+    )
+    eval_dataset = FusedDataset(
+        data_args.val_base_path,
+        data_args.val_jsonl_path,
+        tokenizer,
+        max_length=max_length,
+        image_tokens_num=image_tokens_num,
+        data_type="valuation",
+        enable_u2tokenizer=model_args.enable_u2tokenizer,
+        local_rank=local_rank,
+        use_chat_template=False,
+    )
     data_collator = DataCollator()
     
     rank0_print("="*20 + " Training " + "="*20)
