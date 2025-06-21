@@ -5,8 +5,8 @@
   </h1>
 </p>
 
-[![PWC](https://img.shields.io/badge/%F0%9F%93%8E%20arXiv-Paper-red)](https://arxiv.org/pdf/)
-[![PWC](https://img.shields.io/badge/%F0%9F%8C%8E%20Website-Official%20Page-blue)]()
+[![PWC](https://img.shields.io/badge/%F0%9F%93%8E%20arXiv-Paper-red)](https://u2tokenizer.github.io/static/pdfs/%CE%BC2_Tokenizer.pdf)
+[![PWC](https://img.shields.io/badge/%F0%9F%8C%8E%20Website-Official%20Page-blue)](https://u2tokenizer.github.io/)
 [![PWC](https://img.shields.io/badge/HuggingFace-Demo-Green)]()
 ---
 > 🎉🎉🎉 Our Paper accepted by the 28th conference of The Medical Image Computing and Computer Assisted Intervention Society (MICCAI). See you in Daejeon, Korea from September 23-27, 2025.
@@ -40,8 +40,8 @@ coming soon...
 ## 🤖 Model
 | Model    | Download Link                                                                                                                                 |
 |----------|-----------------------------------------------------------------------------------------------------------------------------------------------|
-| μ²Qwen3-8B | [HuggingFace](https://huggingface.co/SiyouLi/u2Qwen3-8B), [ModelScope]()    |
-| μ²Qwen3-1.7B  | [HuggingFace](https://huggingface.co/SiyouLi/u2Qwen3-1.7B), [ModelScope]()|
+| μ²Qwen3-8B | [HuggingFace](https://huggingface.co/SiyouLi/u2Qwen3-8B)|
+| μ²Qwen3-1.7B  | [HuggingFace](https://huggingface.co/SiyouLi/u2Qwen3-1.7B)|
 
 ## ⚙️ Installation
 ```bash
@@ -49,26 +49,13 @@ git clone https://github.com/Siyou-Li/u2Tokenizer.git
 cd u2Tokenizer
 pip install -r requirements.txt
 ```
+Ensure that the NVIDIA CUDA version 11.8 or above to be compatible with PyTorch 2.2.2.
 
 ## 💿 Data
 Coming soon...
 
 ## 🚄 Training
 Coming soon...
-
-## 🤖 Model Setup
-
-We use Python 3.10.16 for this project and the library requirements are given in requirements.txt. Create a conda environment using
-
-```
-conda create --name <env> --file requirements.txt
-```
-
-Ensure that the NVIDIA CUDA version 11.8 or above to be compatible with PyTorch 2.2.2.
-
-
-The trained checkpoints for our model is available here:
-- 
 
 
 ## 🧰 System Hardware requirements
