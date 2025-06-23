@@ -280,16 +280,3 @@ if __name__ == "__main__":
         print("[*]Answer:")
         print(result["answer"])
         print("-" * 50)
-
-    # # Example usage of translation
-    # source_input = "你好，世界！"
-    # target_lang = "English"
-    # source_lang = "Chinese"
-    # translated_text = translation(source_input, target_lang, source_lang, enable_thinking=False)
-    # print("[*]Translated Text:")
-    # print(translated_text)
-
-    # Example usage of vqa_thinking_translation_synthesis
-    # jsonl_file_path = "datasets/Fused_Dataset/val/amos_mm_findings_vqa_thinking.jsonl"
-    # output_file_path = "datasets/Fused_Dataset/chinese/val/amos_mm_findings_vqa_thinking.jsonl"
-    # vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path)

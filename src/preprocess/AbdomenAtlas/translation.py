@@ -11,7 +11,7 @@ import pandas as pd
 from tqdm import tqdm
 import random
 from src.utils.vllm_func import translation
-from src.utils.prompt_templates import Caption_templates
+from src.utils.prompt_templates import Caption_templates_zh
 
 base_path = config["project_path"]
 csv_file_path = os.path.join(base_path, "datasets/AbdomenAtlas3.0Report/AbdomenAtlas3.0.csv")
@@ -36,7 +36,7 @@ with open(output_file_path, 'a') as f:
         
         try:
             ans = translation(structured_report, "Chinese", "English")
-            prompt_question = random.choice(Caption_templates).format("findings in abdomen")
+            prompt_question = random.choice(Caption_templates_zh).format("腹部")
             item = json.dumps({
                 "image": os.path.join("AbdomenAtlasData", image, "ct.nii.gz"),
                 "dataset": "AbdomenAtlasData3.0",
