@@ -1,0 +1,11 @@
+[project]
+name = "u2tokenizer"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "openai>=1.86.0",
+    "pandas>=2.3.0",
+    "transformers>=4.52.4",
+]
