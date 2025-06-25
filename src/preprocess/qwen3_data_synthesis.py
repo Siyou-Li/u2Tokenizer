@@ -6,8 +6,12 @@
 
 from openai import OpenAI, AsyncOpenAI
 import re
+import logging
 from config import config
 import asyncio
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 model_name= config["openai_server"]["model_name"]
 client = OpenAI(
@@ -272,16 +276,20 @@ if __name__ == "__main__":
     """
     findings = [finding_1, finding_2]
     results = vqa_thinking_batch(findings, images=["image1.png", "image2.png"])
-    print(results)
+    logger.info(results)
     for result in results:
-        print("[*]Report:")
-        print(result["report"])
-        print("[*]System Thinking:")
-        print(result["system_thinking"])
-        print("[*]Question:")
-        print(result["question"])
-        print("[*]Thinking:")
-        print(result["thinking"])
-        print("[*]Answer:")
-        print(result["answer"])
-        print("-" * 50)
+        logger.info(f"""[*]Report:
+{result["report"]}
+
+[*]System Thinking:
+{result["system_thinking"]}
+
+[*]Question:
+{result["question"]}
+
+[*]Thinking:
+{result["thinking"]}
+
+[*]Answer:
+{result["answer"]}
+{'-' * 50}""")
