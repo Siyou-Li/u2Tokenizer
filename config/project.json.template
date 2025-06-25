@@ -1,0 +1,7 @@
+{
+    "openai_server": {
+        "model_name": "Qwen/Qwen3-235B-A22B",
+        "base_url": "https://api.siliconflow.cn/v1",
+        "api_key": "YOUR_API_KEY"
+    }
+}
