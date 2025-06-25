@@ -4,28 +4,47 @@
 # @Author      :   Siyou
 # @Description :
 
-from openai import OpenAI
-from vllm import LLM, SamplingParams
-from transformers import AutoTokenizer
-import torch
-import json
+from openai import OpenAI, AsyncOpenAI
 import re
-import os
-from tqdm import tqdm
+import logging
+from config import config
+import asyncio
 
-# Remove vLLM specific environment variables
-os.environ["TORCH_LOGS"] = "+dynamo"
-os.environ["TORCHDYNAMO_VERBOSE"] = "1"
-gpu_num = torch.cuda.device_count()
+# Set up logger
+logger = logging.getLogger(__name__)
 
-model_name = "pretrained_models/Qwen3-235B-A22B-GPTQ-Int4"
-#model_name = "pretrained_models/Qwen3-30B-A3B-GPTQ-Int4"
-# Configurae the sampling parameters (for thinking mode)
-sampling_params = SamplingParams(temperature=0.6, top_p=0.95, top_k=20, max_tokens=40960)
+model_name= config["openai_server"]["model_name"]
+client = OpenAI(
+    base_url=config["openai_server"]["base_url"],
+    api_key=config["openai_server"]["api_key"],
+)
+async_client = AsyncOpenAI(
+    base_url=config["openai_server"]["base_url"],
+    api_key=config["openai_server"]["api_key"],
+)
 
-# Initialize the vLLM engine
-llm = LLM(model=model_name, tensor_parallel_size=gpu_num, enable_expert_parallel=True)
-tokenizer = AutoTokenizer.from_pretrained(model_name)
+thinking_params = {
+    "stream": False,
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "max_tokens": 8192,
+    "extra_body": {
+        "top_k": 20, 
+        "chat_template_kwargs": {"enable_thinking": True},
+    },
+}
+
+non_thinking_params = {
+    "stream": False,
+    "temperature": 0.7,
+    "top_p": 0.8,
+    "presence_penalty": 1.5,
+    "max_tokens": 8192,
+    "extra_body": {
+        "top_k": 20, 
+        "chat_template_kwargs": {"enable_thinking": False},
+    },
+}
 
 def synthesize_data(prompt, enable_thinking=True):
     # Prepare the input to the model
@@ -33,15 +52,13 @@ def synthesize_data(prompt, enable_thinking=True):
         {"role": "user", "content": prompt}
     ]
 
-    text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-        enable_thinking=enable_thinking,  # Set to False to strictly disable thinking
+    response = client.chat.completions.create(
+        model=model_name,
+        messages=messages,
+        **(thinking_params if enable_thinking else non_thinking_params),
     )
 
-    # Generate outputs
-    outputs = llm.generate([text], sampling_params)[0].outputs[0].text
+    outputs = response.choices[0].message.content
     pattern = re.compile(r"<think>\s*(.*?)\s*</think>\s*(.*)", re.DOTALL)
 
     m = pattern.search(outputs)
@@ -52,8 +69,8 @@ def synthesize_data(prompt, enable_thinking=True):
         thinking = ""
         output   = outputs
     return thinking, output
-
-def synthesize_data_batch(prompts, enable_thinking=True):
+    
+async def synthesize_data_batch(prompts, enable_thinking=True):
     """
     prompts: List[str]
     enable_thinking: bool — whether to include <think> reasoning in the template
@@ -61,38 +78,40 @@ def synthesize_data_batch(prompts, enable_thinking=True):
         thinkings: List[str]  the content captured between <think>…</think>
         outputs:   List[str]  the remaining generated content
     """
-    # 1) Prepare each prompt with your chat template
-    messages = [[{"role": "user", "content": p}] for p in prompts]
-    texts = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-        enable_thinking=enable_thinking,
-    )
-    
-    # 2) Send all to the LLM at once
-    batch_results = llm.generate(texts, sampling_params)  # returns list of generations
+    message_batches = [[{"role": "user", "content": p}] for p in prompts]
+
+    async def process_batch(messages):
+        response = await async_client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            **(thinking_params if enable_thinking else non_thinking_params),
+        )
+        return response.choices
+
+    batch_results = await asyncio.gather(*[process_batch(messages) for messages in message_batches])
     results = []
     pattern = re.compile(r"<think>\s*(.*?)\s*</think>\s*(.*)", re.DOTALL)
 
-    # 3) Parse each result
     for result in batch_results:
-        full_text = result.outputs[0].text
+        full_text = result[0].message.content
         m = pattern.search(full_text)
         if m:
             thinking = m.group(1).strip()
             output = m.group(2).strip()
         else:
-            thinking = ""                 # no <think> block
+            thinking = ""
             output = full_text.strip()
         results.append((thinking, output))
 
     return results
 
 QUESTION_PROMPT_TPL = """
-**original report:**{report}
+Here is a medical radiology report for a CT image.
+```
+{report}
+```
 
-**Question:** What information can we interprete from the report? Please list out as the form of questions, and questions only, in sequenced list.
+Imagine you are assessing a student who is looking at a CT image, you are going to ask a list of questions. Don't mention the report, just list out as the form of questions, and questions only, in sequenced list.
 """.strip()
 
 THINKING_PROMPT_TPL = """
@@ -101,7 +120,7 @@ Your task is to answer the following radiology medicine question, using the pati
 When writing your thought process, imagine you are directly reviewing the patient’s radiology images (do not mention the report), and describe your logical reasoning step by step as an expert would.
 Then, provide your final, correct answer to the question.
 Your response will be used to guide and improve the training of a multimodal large language model for radiology medicine images.
-And here is radiology report what you can see:
+And here is the radiology report that you can see:
 ```
 {report}
 ```
@@ -125,7 +144,7 @@ answer_pattern = r"Answer: ?([^\n]*)"
 def vqa_thinking(finding):
     # 1. generate questions
     prompt = QUESTION_PROMPT_TPL.format(report=finding)
-    _, output = synthesize_data(prompt, enable_thinking=True)
+    _, output = synthesize_data(prompt, enable_thinking=False)
     questions = re.findall(question_pattern, output, flags=re.M|re.S)
     
     # 2. generate thinking
@@ -181,7 +200,7 @@ class VQAThinking:
     def format_results(self):
         results = []
         for question, thinking, answer, system_thinking in zip(self.questions, self.thinkings, self.answers, self.system_thinkings):
-            if len(question) > 20 and len(thinking) > 20 and len(answer) > 20 and len(system_thinking) > 20:
+            if len(question) > 20 and len(thinking) > 20 and len(answer) > 20:
                 results.append({
                     "system_thinking": system_thinking,
                     "question": question,
@@ -201,14 +220,14 @@ def vqa_thinking_batch(findings, images):
     vqa_thinkings = [VQAThinking(finding, image) for finding, image in zip(findings, images)]
 
     # 1. Generate questions
-    question_outputs_batch = synthesize_data_batch([vqa_thinking.question_prompt for vqa_thinking in vqa_thinkings], enable_thinking=True)
+    question_outputs_batch = asyncio.run(synthesize_data_batch([vqa_thinking.question_prompt for vqa_thinking in vqa_thinkings], enable_thinking=False))
     question_outputs = [out[1] for out in question_outputs_batch]
     for vqa_thinking, output in zip(vqa_thinkings, question_outputs):
         vqa_thinking.parse_questions_from_output(output)
 
     # 2. Generate thinkings
     thinking_prompts = [thinking_prompt for vqa_thinking in vqa_thinkings for thinking_prompt in vqa_thinking.thinking_prompts]
-    thinking_outputs_batch = synthesize_data_batch(thinking_prompts, enable_thinking=True)
+    thinking_outputs_batch = asyncio.run(synthesize_data_batch(thinking_prompts, enable_thinking=False))
     system_thinkings = [out[0] for out in thinking_outputs_batch]
     thinking_outputs = [out[1] for out in thinking_outputs_batch]
     index = 0
@@ -237,25 +256,15 @@ def translation(source_input, target_lang, source_lang, enable_thinking=False):
             'role': 'user',
             'content': TRANSLATION.format(source_input=source_input, target_lang=target_lang, source_lang=source_lang),
         }]
-    text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-        enable_thinking=enable_thinking,  # Set to False to strictly disable thinking
+
+    response = client.chat.completions.create(
+        model=model_name,
+        messages=messages,
+        **(thinking_params if enable_thinking else non_thinking_params),
     )
-    # Generate outputs
-    outputs = llm.generate([text], sampling_params)[0].outputs[0].text
-    pattern = r'<think>\n(.*?)\n</think>\s*(.*)'
 
-    m = re.search(pattern, outputs, flags=re.DOTALL)
-    if m:
-        thinking = m.group(1).strip()
-        output   = m.group(2).strip()
-    else:
-        thinking = ""
-        output   = outputs
-    return output
-
+    outputs = response.choices[0].message.content
+    return outputs
 
 if __name__ == "__main__":
     # # Example usage
@@ -267,16 +276,20 @@ if __name__ == "__main__":
     """
     findings = [finding_1, finding_2]
     results = vqa_thinking_batch(findings, images=["image1.png", "image2.png"])
-    print(results)
+    logger.info(results)
     for result in results:
-        print("[*]Report:")
-        print(result["report"])
-        print("[*]System Thinking:")
-        print(result["system_thinking"])
-        print("[*]Question:")
-        print(result["question"])
-        print("[*]Thinking:")
-        print(result["thinking"])
-        print("[*]Answer:")
-        print(result["answer"])
-        print("-" * 50)
+        logger.info(f"""[*]Report:
+{result["report"]}
+
+[*]System Thinking:
+{result["system_thinking"]}
+
+[*]Question:
+{result["question"]}
+
+[*]Thinking:
+{result["thinking"]}
+
+[*]Answer:
+{result["answer"]}
+{'-' * 50}""")
