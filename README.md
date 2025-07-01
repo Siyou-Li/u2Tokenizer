@@ -1,6 +1,6 @@
 <p>
   <h1>
-    <img src="./assets/logo.png" height=150px align="right"/>
+    <img src="./assets/logo.svg" height=150px align="right"/>
    <var>&micro<sup>2</sup></var>Tokenizer: Differentiable Multi-Scale Multi-Modal Tokenizer for Radiology Report Generation
   </h1>
 </p>
