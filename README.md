@@ -70,5 +70,13 @@ For training, stage 1 and 2 use a 4 * 80GB A100 GPU. For inference, a single 40G
 If you find this repo useful, please consider citing: 
 
 ```bibtex
-
+@misc{li2025mu2tokenizerdifferentiablemultiscalemultimodal,
+      title={${\mu}^2$Tokenizer: Differentiable Multi-Scale Multi-Modal Tokenizer for Radiology Report Generation}, 
+      author={Siyou Li and Pengyao Qin and Huanan Wu and Dong Nie and Arun J. Thirunavukarasu and Juntao Yu and Le Zhang},
+      year={2025},
+      eprint={2507.00316},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2507.00316}, 
+}
 ```
