@@ -2,13 +2,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .rma import RelativeMultiheadAttention
+from .rope import RotaryMultiheadAttention
 
 class SpatioTemporalAttentionLayer(nn.Module):
-    def __init__(self, embed_size, num_heads, enable_rpe=False):
+    def __init__(self, embed_size, num_heads, attn_type="rma"):
         super(SpatioTemporalAttentionLayer, self).__init__()
-        if enable_rpe:
+        if attn_type == "rma":
             self.spatial_attention = RelativeMultiheadAttention(embed_size, num_heads)
             self.temporal_attention = RelativeMultiheadAttention(embed_size, num_heads)
+        elif attn_type == "rope":
+            self.spatial_attention = RotaryMultiheadAttention(embed_size, num_heads)
+            self.temporal_attention = RotaryMultiheadAttention(embed_size, num_heads)
         else:
             self.spatial_attention = nn.MultiheadAttention(embed_size, num_heads)
             self.temporal_attention = nn.MultiheadAttention(embed_size, num_heads)
@@ -37,11 +41,11 @@ class SpatioTemporalAttentionLayer(nn.Module):
 
 
 class SpatioTemporalSignificanceScoring(nn.Module):
-    def __init__(self, embed_size, num_heads, num_layers, enable_rpe=False):
+    def __init__(self, embed_size, num_heads, num_layers, attn_type="rma"):
         super(SpatioTemporalSignificanceScoring, self).__init__()
-        self.layers = nn.ModuleList([
-            SpatioTemporalAttentionLayer(embed_size, num_heads, enable_rpe) for _ in range(num_layers)
-        ])
+        self.layers = nn.ModuleList(
+            [SpatioTemporalAttentionLayer(embed_size, num_heads, attn_type) for _ in range(num_layers)]
+        )
 
     def forward(self, x, return_attn=False):
         attn_maps = {}
@@ -147,9 +151,9 @@ class DynamicMultiScalePooling(nn.Module):
         return out
     
 class SpatioTemporalVisualTokenRefinerModel(nn.Module):
-    def __init__(self, embed_size, num_heads, num_layers, top_k, use_multi_scale, enable_rpe=False, enable_diffts=False, enable_dmtp=False):
+    def __init__(self, embed_size, num_heads, num_layers, top_k, use_multi_scale, attn_type="rma", enable_diffts=False, enable_dmtp=False):
         super(SpatioTemporalVisualTokenRefinerModel, self).__init__()
-        self.attention_network = SpatioTemporalSignificanceScoring(embed_size, num_heads, num_layers, enable_rpe)
+        self.attention_network = SpatioTemporalSignificanceScoring(embed_size, num_heads, num_layers, attn_type)
         if enable_diffts:
             self.token_selection = DifferentiableTokenSelection(embed_size, top_k)
         else:
@@ -189,7 +193,14 @@ if __name__ == '__main__':
     num_heads = 8
     num_layers = 4
     top_k = 1024
-    model = SpatioTemporalVisualTokenRefinerModel(embed_size=embed_size, num_heads=num_heads, num_layers=num_layers, top_k=top_k, use_multi_scale=True)
-    video_data = torch.randn(1, 64, 256, embed_size)  # Example input: (batch_size, num_frames, num_tokens, embed_size)
+    model = SpatioTemporalVisualTokenRefinerModel(
+        embed_size=embed_size,
+        num_heads=num_heads,
+        num_layers=num_layers,
+        top_k=top_k,
+        use_multi_scale=True,
+        attn_type="rope",
+    )
+    video_data = torch.randn(1, 64, 256, embed_size)
     output = model(video_data)
     print(output.shape)

@@ -31,6 +31,7 @@ class ModelArguments:
     wandb_run_name: Optional[str] = field(default="test", metadata={"help": "wandb run name"})
 
     enable_u2tokenizer: Optional[bool] = field(default=False, metadata={"help": "Enable linear 3d tokenizer."})
+    attn_type: str = field(default="rma", metadata={"help": "Attention type for tokenizer [rma, rope]"})
     model_init_kwargs = None
 
 @dataclass

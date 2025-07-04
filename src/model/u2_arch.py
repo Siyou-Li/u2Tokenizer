@@ -47,7 +47,7 @@ class u2MetaModel:
         self.config.u2t_top_k = model_args.u2t_top_k
         self.config.use_multi_scale = model_args.use_multi_scale
         self.config.num_3d_query_token = model_args.num_3d_query_token
-        self.config.enable_rpe = model_args.enable_rpe
+        self.config.attn_type = getattr(model_args, "attn_type", "rma")
         self.config.enable_diffts = model_args.enable_diffts
         self.config.enable_dmtp = model_args.enable_dmtp
 
