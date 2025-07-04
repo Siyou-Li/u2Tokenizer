@@ -9,7 +9,7 @@ def build_u2tokenizer_tower(config, **kwargs):
         use_multi_scale=config.use_multi_scale,
         num_3d_query_token=config.num_3d_query_token,
         hidden_size=config.hidden_size,
-        enable_rpe=config.enable_rpe,
+        attn_type=getattr(config, "attn_type", "rma"),
         enable_diffts=config.enable_diffts,
         enable_dmtp=config.enable_dmtp,
     )

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .rma import RelativeMultiheadAttention
+from .rope import RotaryMultiheadAttention
 
 class MultiHeadCrossAttention(nn.Module):
     def __init__(self, d_model, num_heads):
@@ -68,15 +69,17 @@ class MultiHeadCrossAttention(nn.Module):
         return output
 
 class TextConditionTokenAttMap(nn.Module):
-    def __init__(self, d_model, num_heads, enable_rpe=False):
+    def __init__(self, d_model, num_heads, attn_type="rma"):
         super(TextConditionTokenAttMap, self).__init__()
         self.visual_cross_attention = MultiHeadCrossAttention(d_model, num_heads)
         self.text_cross_attention = MultiHeadCrossAttention(d_model, num_heads)
         self.dropout_cross = nn.Identity()
         self.norm_cross_v = nn.LayerNorm(d_model)
         self.norm_cross_t = nn.LayerNorm(d_model)
-        if enable_rpe:
+        if attn_type == "rma":
             self.self_attention = RelativeMultiheadAttention(d_model, num_heads)
+        elif attn_type == "rope":
+            self.self_attention = RotaryMultiheadAttention(d_model, num_heads)
         else:
             self.self_attention = nn.MultiheadAttention(d_model, num_heads, dropout=0.0)
         self.dropout_self = nn.Identity()
@@ -113,9 +116,11 @@ class LinearAggregation(nn.Module):
         return visual_compression
 
 class TextConditionTokenAggregatorModel(nn.Module):
-    def __init__(self, d_model, num_layers, num_heads, enable_rpe=False):
+    def __init__(self, d_model, num_layers, num_heads, attn_type="rma"):
         super(TextConditionTokenAggregatorModel, self).__init__()
-        self.layers_vt = nn.ModuleList([TextConditionTokenAttMap(d_model, num_heads, enable_rpe) for _ in range(num_layers)])
+        self.layers_vt = nn.ModuleList(
+            [TextConditionTokenAttMap(d_model, num_heads, attn_type) for _ in range(num_layers)]
+        )
         self.layer_linagg = LinearAggregation(d_model, num_heads)
 
     def forward(self, query, visual_value, text_value, return_attn=False):
@@ -139,9 +144,9 @@ if __name__ == '__main__':
     embed_size = 896
     num_heads = 8
     num_layers = 4
-    model = TextConditionTokenAggregatorModel(embed_size, num_layers, num_heads)
+    model = TextConditionTokenAggregatorModel(embed_size, num_layers, num_heads, attn_type="rope")
     query = torch.randn(1, 64, embed_size)
-    visual_data = torch.randn(1, 1792, embed_size)  # Example input: (batch_size, num_tokens, embed_size)
+    visual_data = torch.randn(1, 1792, embed_size)
     text_data = torch.randn(1, 755, embed_size)
     output = model(query, visual_data, text_data)
     print(output.shape)

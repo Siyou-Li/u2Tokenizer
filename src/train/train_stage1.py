@@ -73,7 +73,7 @@ class ModelArguments:
     u2t_top_k: int = 1024
     use_multi_scale: bool = True
     num_3d_query_token: int = 256
-    enable_rpe: bool = False
+    attn_type: str = field(default="rma", metadata={"help": "Attention type for tokenizer [rma, rope]"})
     enable_diffts: bool = False
     enable_dmtp: bool = False
 
