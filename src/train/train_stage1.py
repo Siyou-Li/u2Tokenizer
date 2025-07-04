@@ -8,7 +8,7 @@ from transformers import AutoTokenizer, LlamaForCausalLM, AutoModelForCausalLM
 from dataclasses import dataclass, field
 from src.dataset import FusedDataset
 from src.dataset.multi_dataset import UniDatasets, CapDataset, TextDatasets, VQADataset
-from src.model.language_model import u2LlamaForCausalLM, u2Phi3ForCausalLM
+from src.model.language_model import u2LlamaForCausalLM, u2Phi3ForCausalLM, u2Qwen3ForCausalLM
 from src.train.sft_u2Trainer import u2Trainer
 import os
 import torch._dynamo
@@ -66,7 +66,7 @@ class ModelArguments:
     wandb_project_name: Optional[str] = field(default="AMOS-MM", metadata={"help": "wandb project name"})
     wandb_run_name: Optional[str] = field(default="test", metadata={"help": "wandb run name"})
 
-    # linear 3d tokenizer config
+    # u2tokenizer config
     enable_u2tokenizer: bool = False
     u2t_num_heads: int = 8
     u2t_num_layers: int = 4
@@ -286,12 +286,22 @@ def main():
                 bos_token_id=tokenizer.bos_token_id,
                 eos_token_id=tokenizer.eos_token_id,
             )
+            
         elif 'phi3' in model_args.model_type:
             rank0_print("Base model: ", model_args.model_name_or_path)
             model = u2Phi3ForCausalLM.from_pretrained(
                 model_args.model_name_or_path,
                 cache_dir=training_args.cache_dir
                 )
+            
+        elif 'qwen3' in model_args.model_type:
+            rank0_print("Base model: ", model_args.model_name_or_path)
+            model = u2Qwen3ForCausalLM.from_pretrained(
+                model_args.model_name_or_path,
+                cache_dir=training_args.cache_dir,
+                bos_token_id=tokenizer.bos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+            )
         else:
             raise ValueError(f"Unknown Model Type {model_args.model_type}")
     else:
