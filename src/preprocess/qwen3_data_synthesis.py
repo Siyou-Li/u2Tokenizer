@@ -266,6 +266,38 @@ def translation(source_input, target_lang, source_lang, enable_thinking=False):
     outputs = response.choices[0].message.content
     return outputs
 
+def vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path, source_lang="English", target_lang="Chinese", enable_thinking=False):
+    """
+    Synthesize VQA thinking data with translation.
+    jsonl_file_path: str, path to the input JSONL file
+    output_file_path: str, path to the output JSONL file
+    source_lang: str, language of the input text
+    target_lang: str, language for the translation
+    enable_thinking: bool, whether to enable thinking in the synthesis
+    """
+    import os
+    import json
+
+    if not os.path.exists(os.path.dirname(output_file_path)):
+        os.makedirs(os.path.dirname(output_file_path))
+
+    with open(jsonl_file_path, 'r') as f:
+        lines = f.readlines()
+
+    with open(output_file_path, 'w') as f:
+        for line in lines:
+            data = json.loads(line)
+            question = data["question"]
+            translated_question= translation(question, target_lang=target_lang, source_lang=source_lang, enable_thinking=enable_thinking)
+            data["question"] = translated_question
+            refined_thinking = data["refined_thinking"]
+            translated_refined_thinking = translation(refined_thinking, target_lang=target_lang, source_lang=source_lang, enable_thinking=enable_thinking)
+            data["refined_thinking"] = translated_refined_thinking
+            answer = data["answer"]
+            translated_answer = translation(answer, target_lang=target_lang, source_lang=source_lang, enable_thinking=enable_thinking)
+            data["answer"] = translated_answer                           
+            f.write(json.dumps(data, ensure_ascii=False) + "\n")
+
 if __name__ == "__main__":
     # # Example usage
     finding_1 = """

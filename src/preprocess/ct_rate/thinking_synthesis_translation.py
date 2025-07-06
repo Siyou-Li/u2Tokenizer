@@ -18,9 +18,15 @@ test_mode = False
 batch_size = 2
 
 # CT-RATE Translation
-jsonl_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking/train/ct_rate_vqa_thinking.jsonl")
-output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/chinese/train/ct_rate_vqa_thinking.jsonl")
+jsonl_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking_v2/train/ct_rate_vqa_thinking_synthesis_0_10000.jsonl_refined.jsonl")
+output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking_v2/train/ct_rate_vqa_thinking_synthesis_0_10000.jsonl_refined_chinese.jsonl")
 vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path)
-jsonl_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking/val/ct_rate_vqa_thinking.jsonl")
-output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/chinese/val/ct_rate_vqa_thinking.jsonl")
+
+jsonl_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking_v2/train/ct_rate_vqa_thinking_synthesis_20000_30000.jsonl_refined.jsonl")
+output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking_v2/train/ct_rate_vqa_thinking_synthesis_20000_30000.jsonl_refined_chinese.jsonl")
 vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path)
+
+
+# jsonl_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking/val/ct_rate_vqa_thinking.jsonl")
+# output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/chinese/val/ct_rate_vqa_thinking.jsonl")
+# vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path)
