@@ -4,11 +4,15 @@
 # @Author      :   Siyou
 # @Description :
 
+import random
 from openai import OpenAI, AsyncOpenAI
 import re
 import logging
 from config import config
 import asyncio
+import os
+import json
+from src.utils.prompt_templates import general_questions, general_questions_chinese
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -275,8 +279,6 @@ def vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path, source
     target_lang: str, language for the translation
     enable_thinking: bool, whether to enable thinking in the synthesis
     """
-    import os
-    import json
 
     if not os.path.exists(os.path.dirname(output_file_path)):
         os.makedirs(os.path.dirname(output_file_path))
@@ -297,6 +299,51 @@ def vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path, source
             translated_answer = translation(answer, target_lang=target_lang, source_lang=source_lang, enable_thinking=enable_thinking)
             data["answer"] = translated_answer                           
             f.write(json.dumps(data, ensure_ascii=False) + "\n")
+
+def report_thinking_translation_synthesis(jsonl_file_path, output_file_path, source_lang="English", target_lang="Chinese", enable_thinking=False):
+    """
+    Synthesize report thinking data with translation.
+    jsonl_file_path: str, path to the input JSONL file
+    output_file_path: str, path to the output JSONL file
+    source_lang: str, language of the input text
+    target_lang: str, language for the translation
+    enable_thinking: bool, whether to enable thinking in the synthesis
+    """
+    if not os.path.exists(os.path.dirname(output_file_path)):
+        os.makedirs(os.path.dirname(output_file_path))
+
+    with open(jsonl_file_path, 'r') as f:
+        lines = f.readlines()
+
+    with open(output_file_path, 'w') as f:
+        for line in lines:
+            data = json.loads(line)
+
+            # Translate the question
+            question = data["question"]
+            try:
+                question_index = general_questions.index(question)
+                translated_question = general_questions_chinese[question_index]
+            except ValueError:
+                question_index = random.randint(0, len(general_questions) - 1)
+                question = data["question"] = general_questions[question_index]
+                translated_question = translation(question, target_lang=target_lang, source_lang=source_lang, enable_thinking=enable_thinking)
+            data["question"] = translated_question
+
+            # Translate the refined thinking
+            thinking_after = data["thinking_after"]
+            translated_thinking_after = translation(thinking_after, target_lang=target_lang, source_lang=source_lang, enable_thinking=enable_thinking)
+            data["thinking_after"] = translated_thinking_after
+            # Remove the thinking_before
+            data.pop("thinking_before")
+
+            # Translate the report
+            report = data["report"]
+            translated_report = translation(report, target_lang=target_lang, source_lang=source_lang, enable_thinking=enable_thinking)
+            data["report"] = translated_report
+
+            f.write(json.dumps(data, ensure_ascii=False) + "\n")
+
 
 if __name__ == "__main__":
     # # Example usage
