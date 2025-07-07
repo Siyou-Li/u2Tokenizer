@@ -10,6 +10,7 @@ import asyncio
 import logging
 from typing import List
 from config import config
+from src.utils.prompt_templates import general_questions
 
 # Setup logging
 logging.basicConfig(
@@ -60,51 +61,6 @@ The Report:
 Question: {question}
 Answer: {answer}
 """.strip()
-
-questions = [
-            "Can you provide a caption consists of {} for this medical image?",
-            "Describe the {} of the medical image you see.",
-            "Please caption this medical scan with {}.",
-            "What is the {} of this image?",
-            "Describe this medical scan with {}.",
-            "Please write a caption consists of {} for this image.",
-            "Can you summarize with {} the images presented?",
-            "Please caption this scan with {}.",
-            "Please provide a caption consists of {} for this medical image.",
-            "Can you provide a summary consists of {} of this radiograph?",
-            "What are the {} presented in this medical scan?",
-            "Please write a caption consists of {} for this scan.",
-            "Can you provide a description consists of {} of this medical scan?",
-            "Please caption this medical scan with {}.",
-            "Can you provide a caption consists of {} for this medical scan?",
-            # "Please generate a medical report based on this image.",
-            # "Can you generate a diagnose report from this image.",
-            "Could you analyze and provide a caption for the {} in this medical image?",
-            # "Please describe the observations depicted in this medical scan.",
-            "Can you summarize the {} of this image in a caption?",
-            "What are the significant {} in this medical image?",
-            "Please provide a detailed caption outlining the {} of this image.",
-            "Could you interpret and describe the {} shown in this medical scan?",
-            # "What conclusions can you draw from the observations in this image?",
-            "Please write a descriptive caption based on the {} in this scan.",
-            "What key {} can you identify from examining this medical image?",
-            # "Could you generate a detailed report based on the observations in this image?",
-            "Can you provide a diagnosis based on the {} in this image?",
-            "Please generate a comprehensive report summarizing the {} in this image.",
-            "Caption the {} in this medical image?",
-            "Describe the {} you see.",
-            "Caption this medical scan's {}.",
-            "What are the {} here?",
-            "Describe these {}.",
-            "Summarize the {} in these images.",
-            "Caption this scan's {}.",
-            "Provide a caption for this medical image's {}.",
-            "Summarize the {} of this radiograph.",
-            "What {} are presented in this scan?",
-            "Describe this scan's {}.",
-            # "Generate a medical report based on this image.",
-            # "Can you provide a diagnosis based on this image?",
-]
 
 async def query(content, enable_thinking=False):
     if not enable_thinking:
@@ -368,6 +324,8 @@ async def generate_report_thinking(df, jsonl_file):
     # 按图像分组处理
     image_groups = df.groupby('image', sort=False)
     
+    num_questions = len(general_questions)
+        
     if args.enable_batch:
         logger.info(f"使用批量处理模式 (批次大小: {args.batch_size}, 最大并发: {args.max_concurrent})")
         
@@ -394,18 +352,18 @@ async def generate_report_thinking(df, jsonl_file):
             max_concurrent=args.max_concurrent, 
             batch_size=args.batch_size
         )
-        
+
         # 处理结果并保存
         for i, (thinking_after, _) in enumerate(results):
             if thinking_after is None:
                 logger.warning(f"图像 {image_names[i]} 查询失败，跳过")
                 continue
-                
+            question_index = random.randint(0, num_questions - 1)
             thinking_after = re.sub(r"^(?:\*+)?Thinking Progress:(?:\*+)?", "", thinking_after, flags=re.IGNORECASE).strip('`\n')
             result_line = json.dumps({
                 "image": image_names[i],
                 "report": df[df['image'] == image_names[i]]['report'].iloc[0],
-                "question": questions[random.randint(0, len(questions) - 1)].format("findings"),
+                "question": general_questions[question_index],
                 "thinking_before": thinking_befores[i],
                 "thinking_after": thinking_after,
             }, ensure_ascii=False)
@@ -422,6 +380,7 @@ async def generate_report_thinking(df, jsonl_file):
                 logger.info(f"Processing image: {current_image}")
                 logger.info(f"Total number of questions: {len(df[df['image'] == current_image])}")
                 thinking_before = ""
+                question_index = random.randint(0, num_questions - 1)
                 for _, inner_row in df.iloc[index:index+20][df["image"] == current_image].iterrows():
                     thinking_before += " " + inner_row["question"] + inner_row["refined_thinking"] + inner_row["answer"]
                 thinking_before = thinking_before.strip()
@@ -435,7 +394,7 @@ async def generate_report_thinking(df, jsonl_file):
                 result_line = json.dumps({
                     "image": current_image,
                     "report": row["report"],
-                    "question": questions[random.randint(0, len(questions) - 1)].format("findings"),
+                    "question": general_questions[question_index],
                     "thinking_before": thinking_before,
                     "thinking_after": thinking_after,
                 }, ensure_ascii=False)
