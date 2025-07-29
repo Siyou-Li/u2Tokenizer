@@ -22,6 +22,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description='AbdomenAtlas VQA thinking synthesis')
     parser.add_argument('--input_file', type=str, default="datasets/AbdomenAtlas3.0Report/AbdomenAtlas3.0.csv",
                         help='Input CSV file path')
+    parser.add_argument('--split', type=str, default="train",
+                        help='Split to process (default: train)')
     parser.add_argument('--output_file', type=str, default="output/abdomen_atlas3_vqa_thinking_synthesis.jsonl",
                         help='Output JSONL file path')
     parser.add_argument('--start_line', type=int, default=0,
@@ -35,9 +37,12 @@ def parse_args():
     return parser.parse_args()
 
 # AbdomenAtlas3.0
-def abdomen_atlas_vqa_thinking_synthesis(csv_file_path, output_file_path, start_line=0, end_line=None, batch_size=2, test_mode=False):
-    with open(csv_file_path, 'r') as f:
-        raw_data = pd.read_csv(csv_file_path, low_memory=False)
+def abdomen_atlas_vqa_thinking_synthesis(csv_file_path, split, output_file_path, start_line=0, end_line=None, batch_size=2, test_mode=False):
+    # the split file must be in the same directory as the csv file
+    split_file_path = os.path.join(os.path.dirname(csv_file_path), f"IID_{split}.csv")
+    raw_data = pd.read_csv(csv_file_path, low_memory=False)
+    split_data = pd.read_csv(split_file_path, low_memory=False)
+    raw_data = raw_data[raw_data["BDMAP ID"].isin(split_data["BDMAP ID"])]
 
     # Apply start_line and end_line filtering
     if end_line is None:
@@ -81,6 +86,7 @@ def main():
     
     # Use command line arguments
     csv_file_path = args.input_file
+    split = args.split
     output_file_path = args.output_file
     start_line = args.start_line
     end_line = args.end_line
@@ -89,6 +95,7 @@ def main():
     
     abdomen_atlas_vqa_thinking_synthesis(
         csv_file_path, 
+        split,
         output_file_path, 
         start_line=start_line, 
         end_line=end_line, 

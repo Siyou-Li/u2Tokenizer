@@ -5,7 +5,7 @@
 # @Description :
 
 import random
-from openai import OpenAI, AsyncOpenAI
+from openai import OpenAI, AsyncOpenAI, RateLimitError
 import re
 import logging
 from config import config
@@ -13,6 +13,7 @@ import asyncio
 import os
 import json
 from src.utils.prompt_templates import general_questions, general_questions_chinese
+import backoff
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ def synthesize_data(prompt, enable_thinking=True):
         output   = outputs
     return thinking, output
     
-async def synthesize_data_batch(prompts, enable_thinking=True):
+async def synthesize_data_batch(prompts, enable_thinking=True, concurrency=4):
     """
     prompts: List[str]
     enable_thinking: bool — whether to include <think> reasoning in the template
@@ -84,6 +85,7 @@ async def synthesize_data_batch(prompts, enable_thinking=True):
     """
     message_batches = [[{"role": "user", "content": p}] for p in prompts]
 
+    @backoff.on_exception(backoff.expo, RateLimitError)
     async def process_batch(messages):
         response = await async_client.chat.completions.create(
             model=model_name,
@@ -92,7 +94,10 @@ async def synthesize_data_batch(prompts, enable_thinking=True):
         )
         return response.choices
 
-    batch_results = await asyncio.gather(*[process_batch(messages) for messages in message_batches])
+    batch_results = []
+    for i in range(0, len(message_batches), concurrency):
+        batch_results.extend(await asyncio.gather(*[process_batch(messages) for messages in message_batches[i:i+concurrency]]))
+
     results = []
     pattern = re.compile(r"<think>\s*(.*?)\s*</think>\s*(.*)", re.DOTALL)
 
