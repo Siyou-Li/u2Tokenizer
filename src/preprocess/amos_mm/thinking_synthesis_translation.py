@@ -18,9 +18,9 @@ test_mode = False
 batch_size = 2
 
 # AMOS-MM Translation
-jsonl_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking/train/amos_mm_findings_vqa_thinking.jsonl")
-output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/chinese/train/amos_mm_findings_vqa_thinking.jsonl")
+jsonl_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking_v2/train/amos_mm_vqa_thinking_synthesis.jsonl_refined.jsonl")
+output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking_v2/train/amos_mm_vqa_thinking_synthesis.jsonl_refined_chinese.jsonl")
 vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path)
-jsonl_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking/val/amos_mm_findings_vqa_thinking.jsonl")
-output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/chinese/val/amos_mm_findings_vqa_thinking.jsonl")
+jsonl_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking_v2/val/amos_mm_vqa_thinking_synthesis.jsonl_refined.jsonl")
+output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking_v2/val/amos_mm_vqa_thinking_synthesis.jsonl_refined_chinese.jsonl")
 vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path)

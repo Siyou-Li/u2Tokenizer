@@ -18,6 +18,6 @@ test_mode = False
 batch_size = 2
 
 # AbdomenAtlas3.0 Translation
-jsonl_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking/train/abdomen_atlas3_vqa_thinking.jsonl")
-output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/chinese/train/abdomen_atlas3_vqa_thinking.jsonl")
+jsonl_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking_v2/train/abdomen_atlas_vqa_thinking_synthesis.jsonl_refined.jsonl")
+output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/vqa_thinking_v2/train/abdomen_atlas_vqa_thinking_synthesis.jsonl_refined_chinese.jsonl")
 vqa_thinking_translation_synthesis(jsonl_file_path, output_file_path)
