@@ -6,31 +6,37 @@
 
 import json
 import os
-import pandas as pd
 import random
-from config import config
 from tqdm import tqdm
 
-base_path = config["project_path"]
-dir_path = "datasets/Fused_Dataset/val"
+base_path = ""
+dir_path = "datasets/CT-RATE-Thinking/train"
 
-output_file_path = os.path.join(base_path, "datasets/Fused_Dataset/fused_val_dataset.jsonl")
+output_file_path = os.path.join(
+    base_path,
+    "datasets/u2/ct_rate_thinking_fused_train_dataset.jsonl"
+)
+
 if os.path.exists(output_file_path):
     os.remove(output_file_path)
 
 file_names = os.listdir(os.path.join(base_path, dir_path))
 fused_data = []
+
 for file_name in file_names:
-    with open(os.path.join(base_path, dir_path, file_name), 'r') as f:
-        data = f.readlines()
-        for item in tqdm(data):
-            item = json.loads(item)
-            image_path = os.path.join(base_path, "datasets", item["image"])
+    with open(os.path.join(base_path, dir_path, file_name), "r", encoding="utf-8") as f:
+        for line in tqdm(f):
+            item = json.loads(line)
+            image_path = os.path.join(
+                base_path, "datasets", item["image"]
+            ).replace("/train/", "/train_fixed/")
+            item["image"] = item["image"].replace("/train/", "/train_fixed/")
             if os.path.exists(image_path):
-                fused_data.append(json.dumps(item) + "\n")
+                fused_data.append(
+                    json.dumps(item, ensure_ascii=False) + "\n"
+                )
 
 random.shuffle(fused_data)
-with open(output_file_path, 'w') as f:
-    for item in fused_data:
-        f.write("%s" % item)
 
+with open(output_file_path, "w", encoding="utf-8") as f:
+    f.writelines(fused_data)

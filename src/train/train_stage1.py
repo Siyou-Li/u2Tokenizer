@@ -33,7 +33,7 @@ from torch.distributed.elastic.multiprocessing.errors import record
 class ModelArguments:
     version: Optional[str] = field(default="v0")
     model_name_or_path: Optional[str] = field(default="microsoft/Phi-3-mini-4k-instruct", metadata={"help": "Path to the LLM or MLLM."})
-    model_type: Optional[str] = field(default=None, metadata={"help": "llama2, phi3"})
+    model_type: Optional[str] = field(default=None, metadata={"help": "llama2, phi3, qwen3"})
 
     freeze_backbone: bool = field(default=False)
     pretrain_mllm: Optional[str] = field(default=None)
@@ -371,6 +371,7 @@ def main():
 
     max_length=data_args.max_length
     image_tokens_num=data_args.proj_out_num
+    use_thinking = bool(model_args.model_type and "qwen3" in model_args.model_type.lower())
     # train_dataset = CapDataset(data_args, tokenizer, mode='train')
     # eval_dataset = CapDataset(data_args, tokenizer, mode='validation')
     train_dataset = FusedDataset(
@@ -383,6 +384,7 @@ def main():
         enable_u2tokenizer=model_args.enable_u2tokenizer,
         local_rank=local_rank,
         use_chat_template=False,
+        use_thinking=use_thinking,
     )
     eval_dataset = FusedDataset(
         data_args.val_base_path,
@@ -394,6 +396,7 @@ def main():
         enable_u2tokenizer=model_args.enable_u2tokenizer,
         local_rank=local_rank,
         use_chat_template=False,
+        use_thinking=use_thinking,
     )
     data_collator = DataCollator()
     

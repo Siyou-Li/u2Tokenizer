@@ -29,6 +29,7 @@ class FusedDataset(Dataset, Randomizable):
             use_chat_template=True,
             dpo_mode=False,
             return_image=True,
+            use_thinking: bool = False,
     ):
         self.base_path = base_path
         self.tokenizer = tokenizer
@@ -38,6 +39,7 @@ class FusedDataset(Dataset, Randomizable):
         self.use_chat_template = use_chat_template
         self.return_image = return_image
         self.dpo_mode = dpo_mode
+        self.use_thinking = use_thinking
 
         self.annotations = self.load_annotations(os.path.join(base_path, jsonl_path))
         self.set_random_state(seed=get_seed())
@@ -151,8 +153,12 @@ class FusedDataset(Dataset, Randomizable):
             }
 
         answer = annotation["answer"]
+        answer_for_model = answer
+        thinking = annotation.get("thinking") if self.use_thinking else None
+        if isinstance(thinking, str) and thinking.strip():
+            answer_for_model = f"<think>\n{thinking.strip()}\n</think>\n\n{answer.lstrip()}"
         text_tensor = self.tokenizer(
-            question + answer,
+            question + answer_for_model,
             add_special_tokens=False,
             max_length=self.max_length,
             truncation=True,
@@ -196,7 +202,7 @@ class FusedDataset(Dataset, Randomizable):
             'question_ids': question_ids,
             'prompt_question': prompt_question,
             'answer': answer,
+            'thinking': thinking,
             'question_type': "Caption",
         }
         return ret
-
