@@ -39,12 +39,11 @@ class u2Qwen3ForCausalLM(u2MetaForCausalLM, Qwen3ForCausalLM):
 
     def forward(
             self,
-            vision_input: Optional[torch.FloatTensor] = None,
+            images: Optional[torch.FloatTensor] = None,
             input_ids: torch.LongTensor = None,
             labels: Optional[torch.LongTensor] = None,
             attention_mask: Optional[torch.Tensor] = None,
-            raw_question_ids: Optional[torch.LongTensor] = None,
-            vision_token_index: Optional[int] = None,
+            question_ids: Optional[torch.LongTensor] = None,
             position_ids: Optional[torch.LongTensor] = None,
             past_key_values: Optional[List[torch.FloatTensor]] = None,
             inputs_embeds: Optional[torch.FloatTensor] = None,
@@ -57,25 +56,24 @@ class u2Qwen3ForCausalLM(u2MetaForCausalLM, Qwen3ForCausalLM):
 
         if inputs_embeds is None:
             (
-                vision_input,
+                input_ids,
                 position_ids,
                 attention_mask,
                 past_key_values,
                 inputs_embeds,
-                labels,
-                emb_loss
+                labels
             ) = self.prepare_inputs_for_multimodal(
-                vision_input,
                 input_ids,
                 position_ids,
                 attention_mask,
                 past_key_values,
                 labels,
-                vision_token_index,
-                raw_question_ids
+                images,
+                question_ids
             )
 
-        outputs =  super().forward(
+        return super().forward(
+                input_ids=input_ids,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
                 past_key_values=past_key_values,
@@ -86,42 +84,39 @@ class u2Qwen3ForCausalLM(u2MetaForCausalLM, Qwen3ForCausalLM):
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict
             )
-        return (outputs, emb_loss)
 
     @torch.no_grad()
     def generate(
         self,
-        vision_input: Optional[torch.Tensor] = None,
-        input_ids: Optional[torch.Tensor] = None,
-        vision_token_index: Optional[int] = None,
+        images: Optional[torch.Tensor] = None,
+        inputs: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor, Any]:
         position_ids = kwargs.pop("position_ids", None)
         attention_mask = kwargs.pop("attention_mask", None)
-        raw_question_ids = kwargs.pop("raw_question_ids", None)
+        question_ids = kwargs.pop("question_ids", None)
         if "inputs_embeds" in kwargs:
             raise NotImplementedError("`inputs_embeds` is not supported")
 
-        if vision_input is not None:
+        if images is not None:
             (
-                vision_input,
+                inputs,
                 position_ids,
                 attention_mask,
                 _,
                 inputs_embeds,
                 _
             ) = self.prepare_inputs_for_multimodal(
-                vision_input,
-                input_ids,
+                inputs,
                 position_ids,
                 attention_mask,
                 None,
                 None,
-                vision_token_index,
-                raw_question_ids
+                images,
+                question_ids
             )
         else:
-            inputs_embeds = self.get_model().embed_tokens(input_ids)
+            inputs_embeds = self.get_model().embed_tokens(inputs)
 
         output_ids = super().generate(
             inputs_embeds=inputs_embeds,
