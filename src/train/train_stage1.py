@@ -16,6 +16,8 @@ torch._dynamo.config.suppress_errors = False
 import wandb
 from accelerate import Accelerator
 from accelerate.utils import DistributedDataParallelKwargs
+from transformers.trainer_utils import get_last_checkpoint
+from transformers.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME
 
 
 kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
@@ -156,6 +158,47 @@ def preprocess_logits_for_metrics(logits, labels):
     return pred_ids
 
 
+def _is_resumable_trainer_checkpoint(path: str) -> bool:
+    if not os.path.isdir(path):
+        return False
+    has_trainer_state = os.path.isfile(os.path.join(path, "trainer_state.json"))
+    has_weights = any(
+        os.path.isfile(os.path.join(path, fname))
+        for fname in (
+            WEIGHTS_NAME,
+            SAFE_WEIGHTS_NAME,
+            "pytorch_model.bin",
+            "model.safetensors",
+        )
+    )
+    return has_trainer_state and has_weights
+
+
+def _resolve_resume_checkpoint(resume_from_checkpoint: Optional[str], output_dir: str) -> Optional[str]:
+    if not resume_from_checkpoint:
+        return None
+
+    resume_from_checkpoint = os.path.expanduser(resume_from_checkpoint)
+    if not os.path.isdir(resume_from_checkpoint):
+        raise ValueError(f"`resume_from_checkpoint` must be an existing directory, got: {resume_from_checkpoint}")
+
+    if _is_resumable_trainer_checkpoint(resume_from_checkpoint):
+        return resume_from_checkpoint
+
+    last_checkpoint = get_last_checkpoint(resume_from_checkpoint)
+    if last_checkpoint and _is_resumable_trainer_checkpoint(last_checkpoint):
+        return last_checkpoint
+
+    last_checkpoint = get_last_checkpoint(output_dir) if output_dir else None
+    if last_checkpoint and _is_resumable_trainer_checkpoint(last_checkpoint):
+        return last_checkpoint
+
+    raise ValueError(
+        "Could not find a resumable checkpoint. Expected either a Trainer checkpoint directory "
+        "(containing `trainer_state.json` and model weights), or a directory containing `checkpoint-*` subfolders."
+    )
+
+
 def maybe_zero_3(param, ignore_status=False, name=None):
     from deepspeed import zero
     from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
@@ -260,6 +303,11 @@ def main():
     if local_rank == 0:
         wandb.init(project=model_args.wandb_project_name, name=model_args.wandb_run_name)
 
+    resume_from_checkpoint = training_args.resume_from_checkpoint or model_args.checkpoint_path
+    resume_from_checkpoint = _resolve_resume_checkpoint(resume_from_checkpoint, training_args.output_dir)
+    if resume_from_checkpoint:
+        rank0_print(f"Resuming training from checkpoint: {resume_from_checkpoint}")
+
     rank0_print("="*20 + " Tokenizer preparation " + "="*20)
     # Load tokenizer from the given path with specified configurations
     tokenizer = AutoTokenizer.from_pretrained(
@@ -334,10 +382,12 @@ def main():
     model_args.num_new_tokens = 4
     model.initialize_vision_tokenizer(model_args, tokenizer)
 
-    if model_args.pretrain_mllm:
+    if model_args.pretrain_mllm and not resume_from_checkpoint:
         ckpt = torch.load(model_args.pretrain_mllm, map_location="cpu")
         model.load_state_dict(ckpt, strict=True)
         rank0_print("load pretrained MLLM weights.")
+    elif model_args.pretrain_mllm and resume_from_checkpoint:
+        rank0_print("Ignoring `pretrain_mllm` because training is resuming from a checkpoint.")
 
     if training_args.lora_enable:
         from peft import LoraConfig, get_peft_model
@@ -411,7 +461,7 @@ def main():
                             preprocess_logits_for_metrics=preprocess_logits_for_metrics
                       )
     
-    trainer.train()
+    trainer.train(resume_from_checkpoint=resume_from_checkpoint)
     trainer.save_state()
     model.config.use_cache = True
 

@@ -13,6 +13,8 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 import wandb
 from datasets import Dataset
 from src.utils.u2Transform import u2Transform
+from transformers.trainer_utils import get_last_checkpoint
+from transformers.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME
 
 image_transforms = u2Transform(mode='bilinear', data_type="training")
 def rank0_print(*args):
@@ -114,6 +116,47 @@ class DataCollatorForPreference(DataCollatorMixin):
         return output
     
 
+def _is_resumable_trainer_checkpoint(path: str) -> bool:
+    if not os.path.isdir(path):
+        return False
+    has_trainer_state = os.path.isfile(os.path.join(path, "trainer_state.json"))
+    has_weights = any(
+        os.path.isfile(os.path.join(path, fname))
+        for fname in (
+            WEIGHTS_NAME,
+            SAFE_WEIGHTS_NAME,
+            "pytorch_model.bin",
+            "model.safetensors",
+        )
+    )
+    return has_trainer_state and has_weights
+
+
+def _resolve_resume_checkpoint(resume_from_checkpoint: Optional[str], output_dir: str) -> Optional[str]:
+    if not resume_from_checkpoint:
+        return None
+
+    resume_from_checkpoint = os.path.expanduser(resume_from_checkpoint)
+    if not os.path.isdir(resume_from_checkpoint):
+        raise ValueError(f"`resume_from_checkpoint` must be an existing directory, got: {resume_from_checkpoint}")
+
+    if _is_resumable_trainer_checkpoint(resume_from_checkpoint):
+        return resume_from_checkpoint
+
+    last_checkpoint = get_last_checkpoint(resume_from_checkpoint)
+    if last_checkpoint and _is_resumable_trainer_checkpoint(last_checkpoint):
+        return last_checkpoint
+
+    last_checkpoint = get_last_checkpoint(output_dir) if output_dir else None
+    if last_checkpoint and _is_resumable_trainer_checkpoint(last_checkpoint):
+        return last_checkpoint
+
+    raise ValueError(
+        "Could not find a resumable checkpoint. Expected either a Trainer checkpoint directory "
+        "(containing `trainer_state.json` and model weights), or a directory containing `checkpoint-*` subfolders."
+    )
+
+
 
 def main():
     global local_rank
@@ -207,7 +250,14 @@ def main():
                         processing_class=tokenizer,
                       )
     
-    trainer.train()
+    resume_from_checkpoint = _resolve_resume_checkpoint(
+        getattr(training_args, "resume_from_checkpoint", None),
+        getattr(training_args, "output_dir", ""),
+    )
+    if resume_from_checkpoint:
+        rank0_print(f"Resuming training from checkpoint: {resume_from_checkpoint}")
+
+    trainer.train(resume_from_checkpoint=resume_from_checkpoint)
     trainer.save_state()
     model.config.use_cache = True
 
