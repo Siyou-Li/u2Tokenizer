@@ -20,6 +20,17 @@ image_transforms = u2Transform(mode='bilinear', data_type="training")
 def rank0_print(*args):
     if local_rank == 0:
         print(*args)
+
+def _wandb_is_enabled(training_args: DPOConfig) -> bool:
+    report_to = getattr(training_args, "report_to", None)
+    if report_to is None:
+        return False
+    if isinstance(report_to, str):
+        report_to = report_to.lower()
+        return report_to != "none" and "wandb" in report_to
+    if isinstance(report_to, (list, tuple, set)):
+        return any(str(x).lower() == "wandb" for x in report_to)
+    return False
 from torch.distributed.elastic.multiprocessing.errors import record
 @record
 @dataclass
@@ -81,7 +92,7 @@ class TrainingArguments(DPOConfig):
     gradient_checkpointing: bool = False # train fast
     dataloader_pin_memory: bool = False # fast
     dataloader_num_workers: int = 2
-    report_to: str = "tensorboard"
+    report_to: str = "wandb"
     beta: float = 0.1
     model_init_kwargs = None
     ref_model_init_kwargs = None
@@ -164,7 +175,8 @@ def main():
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
     local_rank = training_args.local_rank
-    if local_rank == 0:
+    is_main_process = getattr(training_args, "process_index", 0) == 0
+    if is_main_process and _wandb_is_enabled(training_args):
         wandb.init(project=model_args.wandb_project_name, name=model_args.wandb_run_name)
 
     rank0_print("="*20 + " Tokenizer preparation " + "="*20)

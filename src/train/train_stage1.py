@@ -18,7 +18,7 @@ from accelerate import Accelerator
 from accelerate.utils import DistributedDataParallelKwargs
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME
-
+from torch.distributed.elastic.multiprocessing.errors import record
 
 kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
 accelerator = Accelerator(kwargs_handlers=[kwargs])
@@ -29,20 +29,26 @@ def rank0_print(*args):
     if local_rank == 0:
         print(*args)
 
-from torch.distributed.elastic.multiprocessing.errors import record
+def _wandb_is_enabled(training_args: transformers.TrainingArguments) -> bool:
+    report_to = getattr(training_args, "report_to", None)
+    if report_to is None:
+        return False
+    if isinstance(report_to, str):
+        report_to = report_to.lower()
+        return report_to != "none" and "wandb" in report_to
+    if isinstance(report_to, (list, tuple, set)):
+        return any(str(x).lower() == "wandb" for x in report_to)
+    return False
+
 @record
 @dataclass
 class ModelArguments:
     version: Optional[str] = field(default="v0")
     model_name_or_path: Optional[str] = field(default="microsoft/Phi-3-mini-4k-instruct", metadata={"help": "Path to the LLM or MLLM."})
     model_type: Optional[str] = field(default=None, metadata={"help": "llama2, phi3, qwen3"})
-
     freeze_backbone: bool = field(default=False)
-    pretrain_mllm: Optional[str] = field(default=None)
-
     tune_mm_mlp_adapter: bool = field(default=False, metadata={"help": "Used in pretrain: tune mm_projector and embed_tokens"})
     pretrain_mm_mlp_adapter: Optional[str] = field(default=None, metadata={"help": "Path to pretrained mm_projector and embed_tokens."})
-    checkpoint_path: str = field(default=None, metadata={"help": "Path to Checkpoint"})
     
     # image
     image_channel: int = field(default=1)
@@ -135,7 +141,8 @@ class TrainingArguments(transformers.TrainingArguments):
     gradient_checkpointing: bool = False # train fast
     dataloader_pin_memory: bool = False # fast
     dataloader_num_workers: int = 2
-    report_to: str = "tensorboard"
+    report_to: str = "wandb"
+    continue_from_checkpoint: bool = False
 
 def compute_metrics(eval_preds):
     labels_ids = eval_preds.label_ids
@@ -174,25 +181,22 @@ def _is_resumable_trainer_checkpoint(path: str) -> bool:
     return has_trainer_state and has_weights
 
 
-def _resolve_resume_checkpoint(resume_from_checkpoint: Optional[str], output_dir: str) -> Optional[str]:
-    if not resume_from_checkpoint:
+def _resolve_resume_checkpoint(resume_from_last_checkpoint: Optional[str]) -> Optional[str]:
+    if not resume_from_last_checkpoint:
         return None
 
-    resume_from_checkpoint = os.path.expanduser(resume_from_checkpoint)
-    if not os.path.isdir(resume_from_checkpoint):
-        raise ValueError(f"`resume_from_checkpoint` must be an existing directory, got: {resume_from_checkpoint}")
+    resume_from_last_checkpoint = os.path.expanduser(resume_from_last_checkpoint)
+    if not os.path.isdir(resume_from_last_checkpoint):
+        raise ValueError(f"`resume_from_last_checkpoint` must be an existing directory, got: {resume_from_last_checkpoint}")
 
-    if _is_resumable_trainer_checkpoint(resume_from_checkpoint):
-        return resume_from_checkpoint
+    if _is_resumable_trainer_checkpoint(resume_from_last_checkpoint):
+        return resume_from_last_checkpoint
 
-    last_checkpoint = get_last_checkpoint(resume_from_checkpoint)
+    last_checkpoint = get_last_checkpoint(resume_from_last_checkpoint)
     if last_checkpoint and _is_resumable_trainer_checkpoint(last_checkpoint):
+        print(f"Found last checkpoint at {last_checkpoint}")
         return last_checkpoint
-
-    last_checkpoint = get_last_checkpoint(output_dir) if output_dir else None
-    if last_checkpoint and _is_resumable_trainer_checkpoint(last_checkpoint):
-        return last_checkpoint
-
+    
     raise ValueError(
         "Could not find a resumable checkpoint. Expected either a Trainer checkpoint directory "
         "(containing `trainer_state.json` and model weights), or a directory containing `checkpoint-*` subfolders."
@@ -300,13 +304,14 @@ def main():
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
     local_rank = training_args.local_rank
-    if local_rank == 0:
+    is_main_process = getattr(training_args, "process_index", 0) == 0
+    if is_main_process and _wandb_is_enabled(training_args):
         wandb.init(project=model_args.wandb_project_name, name=model_args.wandb_run_name)
-
-    resume_from_checkpoint = training_args.resume_from_checkpoint or model_args.checkpoint_path
-    resume_from_checkpoint = _resolve_resume_checkpoint(resume_from_checkpoint, training_args.output_dir)
-    if resume_from_checkpoint:
-        rank0_print(f"Resuming training from checkpoint: {resume_from_checkpoint}")
+        
+    if training_args.continue_from_checkpoint:
+        resume_from_checkpoint = _resolve_resume_checkpoint(training_args.output_dir)
+        if resume_from_checkpoint:
+            rank0_print(f"Resuming training from checkpoint: {resume_from_checkpoint}")
 
     rank0_print("="*20 + " Tokenizer preparation " + "="*20)
     # Load tokenizer from the given path with specified configurations
@@ -382,13 +387,6 @@ def main():
     model_args.num_new_tokens = 4
     model.initialize_vision_tokenizer(model_args, tokenizer)
 
-    if model_args.pretrain_mllm and not resume_from_checkpoint:
-        ckpt = torch.load(model_args.pretrain_mllm, map_location="cpu")
-        model.load_state_dict(ckpt, strict=True)
-        rank0_print("load pretrained MLLM weights.")
-    elif model_args.pretrain_mllm and resume_from_checkpoint:
-        rank0_print("Ignoring `pretrain_mllm` because training is resuming from a checkpoint.")
-
     if training_args.lora_enable:
         from peft import LoraConfig, get_peft_model
         lora_config = LoraConfig(
@@ -460,8 +458,10 @@ def main():
                             compute_metrics=compute_metrics,
                             preprocess_logits_for_metrics=preprocess_logits_for_metrics
                       )
-    
-    trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+    if training_args.continue_from_checkpoint:
+        trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+    else:
+        trainer.train()
     trainer.save_state()
     model.config.use_cache = True
 
