@@ -40,6 +40,22 @@ def _wandb_is_enabled(training_args: transformers.TrainingArguments) -> bool:
         return any(str(x).lower() == "wandb" for x in report_to)
     return False
 
+def _resolve_dataset_thinking(dataset_thinking: str, model_type: Optional[str]) -> tuple[bool, str]:
+    """
+    Returns (use_thinking, resolved_mode).
+    - dataset_thinking: "auto" | "on" | "off" (case-insensitive; accepts common aliases)
+    - resolved_mode: "auto(qwen3)" | "on" | "off"
+    """
+    mode = (dataset_thinking or "auto").strip().lower()
+    if mode in ("auto"):
+        use_thinking = bool(model_type and "qwen3" in model_type.lower())
+        return use_thinking, f"auto({'qwen3' if use_thinking else 'off'})"
+    if mode in ("on", "true", "1", "yes", "y", "enable", "enabled"):
+        return True, "on"
+    if mode in ("off", "false", "0", "no", "n", "disable", "disabled"):
+        return False, "off"
+    raise ValueError(f"Unknown `dataset_thinking` mode: {dataset_thinking!r}. Expected: auto|on|off.")
+
 @record
 @dataclass
 class ModelArguments:
@@ -91,6 +107,13 @@ class DataArguments:
     train_base_path: str = field(default="", metadata={"help": "Path to image data."})
     val_jsonl_path: str = field(default="", metadata={"help": "Path to caption data."})
     val_base_path: str = field(default="", metadata={"help": "Path to image data."})
+    dataset_thinking: str = field(
+        default="auto",
+        metadata={
+            "help": "Whether to include the dataset's `thinking` field in targets: auto|on|off. "
+                    "`auto` enables it only for Qwen3 models (current default behavior)."
+        },
+    )
     
     # caption data
     data_root: str = field(default="/import/c4dm-04/siyoul/u2Tokenizer/datasets/M3D-Cap/", metadata={"help": "Root directory for all data."})
@@ -419,7 +442,13 @@ def main():
 
     max_length=data_args.max_length
     image_tokens_num=data_args.proj_out_num
-    use_thinking = bool(model_args.model_type and "qwen3" in model_args.model_type.lower())
+    use_thinking, thinking_mode = _resolve_dataset_thinking(data_args.dataset_thinking, model_args.model_type)
+    rank0_print(f"dataset_thinking={data_args.dataset_thinking!r} -> use_thinking={use_thinking} ({thinking_mode})")
+    if is_main_process and _wandb_is_enabled(training_args):
+        wandb.config.update(
+            {"dataset_thinking": data_args.dataset_thinking, "dataset_use_thinking": use_thinking, "dataset_thinking_mode": thinking_mode},
+            allow_val_change=True,
+        )
     # train_dataset = CapDataset(data_args, tokenizer, mode='train')
     # eval_dataset = CapDataset(data_args, tokenizer, mode='validation')
     train_dataset = FusedDataset(

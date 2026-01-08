@@ -81,7 +81,7 @@ class TextConditionTokenAttMap(nn.Module):
         elif attn_type == "rope":
             self.self_attention = RotaryMultiheadAttention(d_model, num_heads)
         else:
-            self.self_attention = nn.MultiheadAttention(d_model, num_heads, dropout=0.0)
+            self.self_attention = nn.MultiheadAttention(d_model, num_heads, dropout=0.0, batch_first=True)
         self.dropout_self = nn.Identity()
         self.norm_self = nn.LayerNorm(d_model)
 

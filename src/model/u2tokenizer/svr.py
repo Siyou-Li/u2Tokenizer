@@ -14,8 +14,8 @@ class SpatioTemporalAttentionLayer(nn.Module):
             self.spatial_attention = RotaryMultiheadAttention(embed_size, num_heads)
             self.temporal_attention = RotaryMultiheadAttention(embed_size, num_heads)
         else:
-            self.spatial_attention = nn.MultiheadAttention(embed_size, num_heads)
-            self.temporal_attention = nn.MultiheadAttention(embed_size, num_heads)
+            self.spatial_attention = nn.MultiheadAttention(embed_size, num_heads, batch_first=True)
+            self.temporal_attention = nn.MultiheadAttention(embed_size, num_heads, batch_first=True)
 
         self.spatial_attention._reset_parameters()
         self.temporal_attention._reset_parameters()
@@ -86,7 +86,8 @@ class TokenSelection(nn.Module):
         token_indices = topk_indices % n
 
         # Gather top-k tokens
-        topk_tokens = x[torch.arange(b).unsqueeze(1), frame_indices, token_indices]
+        batch_indices = torch.arange(b, device=x.device).unsqueeze(1)
+        topk_tokens = x[batch_indices, frame_indices, token_indices]
 
         return topk_tokens
 
