@@ -1,9 +1,17 @@
-# -*- encoding: utf-8 -*-
-# @File        :   u2Transform.py
-# @Time        :   2025/03/10 19:44:36
-# @Author      :   Siyou
-# @Description :
+import argparse
+import gzip
+import inspect
+import json
+import os
+import struct
+import sys
+import types
 
+import torch.nn.functional as F
+import torch
+import nibabel as nib
+import numpy as np
+from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
 from monai.data.image_reader import NibabelReader
 from monai.transforms import (
         LoadImage,
@@ -19,31 +27,22 @@ from monai.transforms import (
         RandShiftIntensity
     )
 from monai.transforms.spatial.functional import resize
-import torch.nn.functional as F
-import torch
-import nibabel as nib
-import numpy as np
 
+
+_DTYPE_MAP = {
+    2: np.uint8,
+    4: np.int16,
+    8: np.int32,
+    16: np.float32,
+    64: np.float64,
+    256: np.int8,
+    512: np.uint16,
+    768: np.uint32,
+    1024: np.int64,
+}
 class u2Transform:
-    def __init__(self, mode='bilinear', data_type="validation", device="cpu"):
-        if data_type == "training":
-            transforms = Compose(
-                [
-                #LoadImage(image_only=True, ensure_channel_first=False, reader=NibabelReader()),
-                ScaleIntensityRangePercentiles(lower=0.5, upper=99.5, b_max=1.0, b_min=0.0, clip=True),
-                CropForeground(source_key="image"),
-                #NormalizeIntensity(),   
-                RandRotate90(prob=0.5, spatial_axes=(1, 2)),
-                RandFlip(prob=0.10, spatial_axis=0),
-                RandFlip(prob=0.10, spatial_axis=1),
-                RandFlip(prob=0.10, spatial_axis=2),
-                RandScaleIntensity(factors=0.1, prob=0.5),
-                RandShiftIntensity(offsets=0.1, prob=0.5),
-                ToTensor(),
-                ]
-            )
-        else:
-            transforms = Compose(
+    def __init__(self, mode='bilinear', device="cpu"):
+        transforms = Compose(
                 [
                 #LoadImage(image_only=True, ensure_channel_first=False, reader=NibabelReader()),
                 ScaleIntensityRangePercentiles(lower=0.5, upper=99.5, b_max=1.0, b_min=0.0, clip=True),
@@ -122,42 +121,70 @@ class u2Transform:
     def __call__(self, *args, **kwds):
         return self.adaptive_resize(*args, **kwds)
 
-if __name__ == "__main__":
-    l3d_t = u2Transform()
-    # shape: [512,512, 212]
-    input_path = "/import/c4dm-04/siyoul/u2Tokenizer/datasets/AMOS-MM/imagesTr/amos_7284.nii.gz"
-    output_path = "/import/c4dm-04/siyoul/u2Tokenizer/amos_0001_resized.nii.gz"
-    data = l3d_t.adaptive_resize(input_path)
-    print(data.shape)
-    # import os
-    # from multiprocessing import Process
-    # from src.utils.array_split import array_split
-    # image_dir = os.path.join(base_path, "datasets/CT-RATE/dataset/train")
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", default="checkpoint/u2Qwen3-4B-Instruct")
+    parser.add_argument("--image-path", default="example.nii.gz", help="NIfTI file (.nii or .nii.gz).")
+    parser.add_argument("--question", default="你能根据这张图像的发现做出诊断吗？")
+    parser.add_argument("--max-new-tokens", type=int, default=2560)
+    args = parser.parse_args()
 
-    # num_workers = 32
-    # def worker(work_id, sub_image_dir, image_dir=image_dir):
-    #     nifti_utils = NlfTIUtils()
-        
-    #     for dir in sub_image_dir:
-    #         nii_dirs_1 = os.listdir(os.path.join(image_dir, dir))
-    #         for dir_1 in nii_dirs_1:
-    #             nii_dirs_2 = os.listdir(os.path.join(image_dir, dir, dir_1))
-    #             for file in nii_dirs_2:
-    #                 path = os.path.join(image_dir, dir, dir_1, file)
-    #                 print(f"worker-{work_id} Processing {path}")
-    #                 try:
-    #                     nifti_utils.NlfTI_adaptive_resize(path, path)
-    #                 except Exception as e:
-    #                     print(e)
-    #                     print(path)
-    #                     continue
-    # # split the image dir
-    # sub_image_dirs = array_split(os.listdir(image_dir), num_workers)
-    # print("Number of image dirs:", len(os.listdir(image_dir)))
-    # process_list = []
-    # for i, sub_image_dir in enumerate(sub_image_dirs):
-    #     p = Process(target=worker, args=(i, sub_image_dir))
-    #     p.start()
-    #     process_list.append(p)
-    # for p in process_list:
-    #     p.join()
+    dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+
+    tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False, trust_remote_code=True)
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model,
+            trust_remote_code=True,
+            dtype=dtype,
+            device_map="auto" if torch.cuda.is_available() else None,
+        )
+    except TypeError:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model,
+            trust_remote_code=True,
+            torch_dtype=dtype,
+            device_map="auto" if torch.cuda.is_available() else None,
+        )
+    device = next(model.parameters()).device
+    model.eval()
+
+    target_dhw = tuple(int(x) for x in getattr(model.config, "image_size", (32, 256, 256)))
+    image_transforms = u2Transform(mode="bilinear", device=device)
+    image = image_transforms(args.image_path).unsqueeze(0).to(dtype)
+
+    proj_out_num = getattr(getattr(model.get_model(), "mm_projector", None), "proj_out_num", 256)
+    image_tokens = "<im_patch>" * int(proj_out_num)
+    prompt = image_tokens + args.question
+
+    encoded = tokenizer(prompt, return_tensors="pt")
+    input_ids = encoded["input_ids"].to(device)
+    attention_mask = encoded.get("attention_mask")
+    attention_mask = attention_mask.to(device) if attention_mask is not None else None
+    question_ids = tokenizer(args.question, add_special_tokens=False, return_tensors="pt")["input_ids"].to(device)
+
+    # Transformers >=4.57 passes `cache_position` to forward() during generation; older custom model
+    # implementations might not accept it yet.
+    if "cache_position" not in inspect.signature(model.forward).parameters:
+        original_forward = model.forward
+
+        def _forward_compat(self, *f_args, **f_kwargs):
+            f_kwargs.pop("cache_position", None)
+            return original_forward(*f_args, **f_kwargs)
+
+        model.forward = types.MethodType(_forward_compat, model)
+
+    with torch.no_grad():
+        output_ids = model.generate(
+            images=image,
+            inputs=input_ids,
+            question_ids=question_ids,
+            attention_mask=attention_mask,
+            max_new_tokens=args.max_new_tokens,
+        )
+
+    print(tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0])
+
+
+if __name__ == "__main__":
+    main()
