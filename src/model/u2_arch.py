@@ -16,7 +16,8 @@ class u2MetaModel:
         if hasattr(config, "vision_tower"):
             self.vision_tower = build_vision_tower(config)
             self.mm_projector = build_mm_projector(config)
-            # self.u2tokenizer = build_u2tokenizer_tower(config)
+            if getattr(config, "enable_u2tokenizer", False):
+                self.u2tokenizer = build_u2tokenizer_tower(config)
 
     def get_u2tokenizer(self):
         u2tokenizer = getattr(self, 'u2tokenizer', None)
@@ -101,13 +102,20 @@ class u2MetaForCausalLM(ABC):
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
             return input_ids, position_ids, attention_mask, past_key_values, None, labels
         else:
-            if self.config.enable_u2tokenizer:
+            if getattr(self.config, "enable_u2tokenizer", False):
                 B, C, D, H, W = images.shape
                 images = images.view(B * C, 1, D, H, W)
                 image_features = self.encode_images(images)
                 v_tokens = image_features.view(B, C, image_features.shape[-2], image_features.shape[-1])
                 t_tokens = self.get_model().embed_tokens(question_ids)
-                image_features = self.get_u2tokenizer()(v_token=v_tokens, t_token=t_tokens)
+                u2tokenizer = self.get_u2tokenizer()
+                if u2tokenizer is None:
+                    raise RuntimeError(
+                        "config.enable_u2tokenizer is True, but `self.u2tokenizer` is not initialized. "
+                        "This usually means the checkpoint config enables u2Tokenizer but the model "
+                        "was instantiated without building it."
+                    )
+                image_features = u2tokenizer(v_token=v_tokens, t_token=t_tokens)
             else:
                 image_features = self.encode_images(images)
             inputs_embeds = self.get_model().embed_tokens(input_ids)

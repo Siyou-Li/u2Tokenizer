@@ -127,8 +127,7 @@ class u2Transform:
 if __name__ == "__main__":
     l3d_t = u2Transform()
     # shape: [512,512, 212]
-    input_path = "/import/c4dm-04/siyoul/u2Tokenizer/datasets/AMOS-MM/imagesTr/amos_7284.nii.gz"
-    output_path = "/import/c4dm-04/siyoul/u2Tokenizer/amos_0001_resized.nii.gz"
+    input_path = "example.nii.gz"
     data = l3d_t.adaptive_resize(input_path)
     print(data.shape)
     # import os
