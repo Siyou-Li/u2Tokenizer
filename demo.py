@@ -125,11 +125,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="checkpoint/u2Qwen3-4B-Instruct")
     parser.add_argument("--image-path", default="example.nii.gz", help="NIfTI file (.nii or .nii.gz).")
-    parser.add_argument("--question", default="你能根据这张图像的发现做出诊断吗？")
-    parser.add_argument("--max-new-tokens", type=int, default=2560)
+    parser.add_argument("--question", default="你可以描述这张医学影像吗？", help="The question about the image.")
+    parser.add_argument("--max-new-tokens", type=int, default=128)
     args = parser.parse_args()
 
     dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+    print(dtype)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False, trust_remote_code=True)
     try:
@@ -181,6 +182,11 @@ def main() -> None:
             question_ids=question_ids,
             attention_mask=attention_mask,
             max_new_tokens=args.max_new_tokens,
+            # 强制指定停止符
+            eos_token_id=tokenizer.convert_tokens_to_ids("<|im_end|>"),
+            pad_token_id=tokenizer.convert_tokens_to_ids("<|endoftext|>"),
+            # 防止复读机
+            repetition_penalty=1.1
         )
 
     print(tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0])
