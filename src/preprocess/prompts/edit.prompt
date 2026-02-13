@@ -1,0 +1,10 @@
+Help me edit the narrative below:
+- If the narrative refers to a report, you change it as if you see it from the radiology image
+- Edit only the places mentioned above, leave all other text the same
+- Do not add/remove/change any other information
+- Directly output the result text
+
+**The narrative:**
+```
+{report}
+```

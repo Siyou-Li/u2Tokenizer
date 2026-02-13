@@ -1,0 +1,20 @@
+You are a radiology medicine expert.
+Your task is to answer the following radiology medicine question, using the patient's medical record report provided below.
+When writing your thought process, imagine you are directly reviewing the patient's radiology images (do not mention the report), and describe your logical reasoning step by step as an expert would.
+Then, provide your final, correct answer to the question.
+Your response will be used to guide and improve the training of a multimodal large language model for radiology medicine images.
+And here is the radiology report that you can see:
+```
+{report}
+```
+
+Now we have a question:
+```
+{question}
+```
+
+Please consider and answer the question in the following format:
+
+Thinking: <thought process>
+
+Answer: <answer to the question>
