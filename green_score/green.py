@@ -1,7 +1,6 @@
 import re
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from gptqmodel import GPTQModel
 import pandas as pd
 from datasets import Dataset
 from tqdm import tqdm
@@ -14,7 +13,7 @@ from openai import OpenAI
 from config import config
 
 # Import necessary functions (ensure these are available in your environment)
-from green_refactored.utils import (
+from green_score.utils import (
     make_prompt,
     clean_responses,
     compute_largest_cluster,
@@ -184,18 +183,6 @@ class OpenAILLM(LLM):
                 for line in file_response.content.splitlines():
                     line = json.loads(line)
                     f.write(line["response"]["body"]["choices"][0]["message"]["content"] + "\n")
-
-class QuantizedLLM(LLM):
-    def __init__(self, model_name):
-        super().__init__(model_name)
-        # model_name is "/data/huanan/GREEN/quantized_model_path"
-        self.model = GPTQModel.load(model_name, trust_remote_code=True)
-        self.tokenizer = self.model.tokenizer
-
-    @torch.inference_mode()
-    def get_response(self, batch):
-        self.model.generate()
-        raise NotImplementedError()
 
 class GREEN:
     def __init__(self, llm_model: LLM, compute_summary_stats=True):
