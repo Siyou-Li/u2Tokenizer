@@ -117,8 +117,8 @@ class GREENLLM(LLM):
         return response_list
 
 class OpenAILLM(LLM):
-    def __init__(self, model_name):
-        super().__init__(model_name)
+    def __init__(self):
+        super().__init__(config["openai_server"]["model_name"])
         base_url = config["openai_server"]["base_url"]
         if not base_url:
             base_url = None
@@ -130,7 +130,7 @@ class OpenAILLM(LLM):
     def get_response(self, batch):
         responses = []
         for prompt in batch["prompt"]:
-            response = self.client.chat.completions.create(model=config["openai_server"]["model_name"], messages= [{"role": "user", "content": prompt}, {"role": "assistant", "content": ""}]).choices[0].message.content
+            response = self.client.chat.completions.create(model=self.model_name, messages= [{"role": "user", "content": prompt}, {"role": "assistant", "content": ""}]).choices[0].message.content
             responses.append(response)
 
         response_list = []
