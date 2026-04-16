@@ -1,0 +1,13 @@
+You are a radiology medicine expert. Now you are looking at a radiology image.
+Here is your self talk when viewing the image:
+```
+{thinking_before}
+```
+
+Please paraphrase the self talk text and output it as **thinking progress**. Remember:
+- Do not add/remove/alter any information
+- Mind the coherence and fluence of output
+- Deductions are prefered
+- Directly output the result text
+
+Your output:

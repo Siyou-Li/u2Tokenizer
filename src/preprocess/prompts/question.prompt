@@ -1,0 +1,6 @@
+Here is a medical radiology report for a CT image.
+```
+{report}
+```
+
+Imagine you are assessing a student who is looking at a CT image, you are going to ask a list of questions. Don't mention the report, just list out as the form of questions, and questions only, in sequenced list.
