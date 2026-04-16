@@ -7,7 +7,11 @@
 
 [![PWC](https://img.shields.io/badge/%F0%9F%93%8E%20arXiv-Paper-red)](https://u2tokenizer.github.io/static/pdfs/%CE%BC2_Tokenizer.pdf)
 [![PWC](https://img.shields.io/badge/%F0%9F%8C%8E%20Website-Official%20Page-blue)](https://u2tokenizer.github.io/)
-[![PWC](https://img.shields.io/badge/HuggingFace-Demo-Green)]()
+[![PWC](https://img.shields.io/badge/🤗%20Dataset-CT--RATE--Thinking-yellow)](https://huggingface.co/datasets/AlpachinoNLP/CT-RATE-Thinking)
+<br>
+[![PWC](https://img.shields.io/badge/🤗%20Model-u2Qwen3--1.7B--Instruct-green)](https://huggingface.co/AlpachinoNLP/u2Qwen3-1.7B-Instruct)
+[![PWC](https://img.shields.io/badge/🤗%20Model-u2Qwen3--4B--Instruct-green)](https://huggingface.co/AlpachinoNLP/u2Qwen3-4B-Instruct)
+[![PWC](https://img.shields.io/badge/🤗%20Model-u2Qwen3--4B--Thinking-green)](https://huggingface.co/AlpachinoNLP/u2Qwen3-4B-Thinking)
 ---
 > 🎉🎉🎉 Our Paper accepted by the 28th conference of The Medical Image Computing and Computer Assisted Intervention Society (MICCAI). See you in Daejeon, Korea from September 23-27, 2025.
 
@@ -38,10 +42,11 @@ coming soon...
 ```
 
 ## 🤖 Model
-| Model    | Download Link                                                                                                                                 |
-|----------|-----------------------------------------------------------------------------------------------------------------------------------------------|
-| μ²Qwen3-8B | [HuggingFace](https://huggingface.co/SiyouLi/u2Qwen3-8B)|
-| μ²Qwen3-1.7B  | [HuggingFace](https://huggingface.co/SiyouLi/u2Qwen3-1.7B)|
+| Model | Download Link |
+|-------|---------------|
+| μ²Qwen3-4B-Thinking | [HuggingFace](https://huggingface.co/AlpachinoNLP/u2Qwen3-4B-Thinking) |
+| μ²Qwen3-4B-Instruct | [HuggingFace](https://huggingface.co/AlpachinoNLP/u2Qwen3-4B-Instruct) |
+| μ²Qwen3-1.7B-Instruct | [HuggingFace](https://huggingface.co/AlpachinoNLP/u2Qwen3-1.7B-Instruct) |
 
 ## ⚙️ Installation
 ```bash
@@ -52,7 +57,13 @@ pip install -r requirements.txt
 Ensure that the NVIDIA CUDA version 11.8 or above to be compatible with PyTorch 2.2.2.
 
 ## 💿 Data
-Coming soon...
+
+| Dataset | Description | Download |
+|---------|-------------|----------|
+| CT-RATE-Thinking | Reasoning-augmented VQA pairs and report-level thinking narratives derived from CT-RATE, used for SFT training of μ²LLM. Contains ~666K English VQA pairs, ~666K Chinese VQA pairs, ~42K English report thinking, and ~42K Chinese report thinking across train/val splits. | [HuggingFace](https://huggingface.co/datasets/AlpachinoNLP/CT-RATE-Thinking) |
+| CT-RATE | Source CT volumes and original radiology reports (50,188 scans, 21,340 patients). Required to pair with CT-RATE-Thinking. | [HuggingFace](https://huggingface.co/datasets/ibrahimhamamci/CT-RATE) |
+
+The CT-RATE-Thinking dataset was generated from CT-RATE reports using the five-stage CT Report Reasoning Synthesis pipeline described in §2.4 of our paper. See the [dataset README](https://huggingface.co/datasets/AlpachinoNLP/CT-RATE-Thinking) for the full schema and usage instructions.
 
 ## 🚄 Training
 Coming soon...
