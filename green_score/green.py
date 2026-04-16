@@ -1,108 +1,48 @@
 import re
 import torch
-import torch.distributed as dist
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import pandas as pd
 from datasets import Dataset
-from datasets.distributed import split_dataset_by_node
-import os
 from tqdm import tqdm
 import numpy as np
 import time
-import sys
 import warnings
-import torch.nn as nn
+import json
+from openai import OpenAI
+
+from config import config
 
 # Import necessary functions (ensure these are available in your environment)
-from .utils import (
-    gather_processes,
+from green_score.utils import (
     make_prompt,
     clean_responses,
     compute_largest_cluster,
     flatten_values_lists_of_list_dicts_to_dict,
 )
 
+from transformers.utils import logging
 
-def get_rank():
-    if not dist.is_initialized():
-        return 0
-    return dist.get_rank()
+# Set the logging level for the transformers library to ERROR to suppress warnings that have been resolved
+logging.get_logger("transformers").setLevel(logging.ERROR)
 
+class LLM:
+    def __init__(self, model_name):
+        self.model_name = model_name
 
-def is_main_process():
-    return get_rank() == 0
+    def get_response(self, batch):
+        raise NotImplementedError()
 
+class GREENLLM(LLM):
+    def __init__(self, model_name, device="cuda"):
+        super().__init__(model_name)
 
-def tqdm_on_main(*args, **kwargs):
-    if is_main_process():
-        print("==== Beginning Inference ====")
-        return tqdm(*args, **kwargs)
-    else:
-        return kwargs.get("iterable", None)
-
-
-class GREEN:
-    def __init__(self, model_name, output_dir=".", cpu=False):
-        super().__init__()
-        warnings.filterwarnings(
-            "ignore", message="A decoder-only architecture is being used*"
-        )
-        from sklearn.exceptions import ConvergenceWarning
-
-        warnings.filterwarnings(
-            "ignore",
-            category=ConvergenceWarning,
-            message="Number of distinct clusters.*",
-        )
-        warnings.filterwarnings(
-            "ignore",
-            category=FutureWarning,
-            module="transformers.tokenization_utils_base",
-        )
-        self.cpu = cpu
-        self.model_name = model_name.split("/")[-1]
-        self.output_dir = output_dir
-        self.batch_size = 4
-        self.max_length = 2048
-        self.categories = [
-            "Clinically Significant Errors",
-            "Clinically Insignificant Errors",
-            "Matched Findings",
-        ]
-        self.sub_categories = [
-            "(a) False report of a finding in the candidate",
-            "(b) Missing a finding present in the reference",
-            "(c) Misidentification of a finding's anatomic location/position",
-            "(d) Misassessment of the severity of a finding",
-            "(e) Mentioning a comparison that isn't in the reference",
-            "(f) Omitting a comparison detailing a change from a prior study",
-        ]
-        self.prompts = None
-        self.completions = None
-        self.green_scores = None
-        self.error_counts = None
-
-        if torch.cuda.is_available() and torch.cuda.device_count() > 1 and not self.cpu:
-            if not dist.is_initialized():
-                dist.init_process_group(
-                    backend="nccl",
-                )
-                torch.cuda.set_device(dist.get_rank())
-                if dist.get_rank() == 0:
-                    print(
-                        "Distributed training with", torch.cuda.device_count(), "GPUs"
-                    )
+        self.device = device
 
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             trust_remote_code=False if "Phi" in model_name else True,
-            device_map=(
-                {"": "cuda:{}".format(torch.cuda.current_device())}
-                if not self.cpu
-                else {"": "cpu"}
-            ),
             torch_dtype=torch.float16,
-        )
+        ).to(self.device)
         self.model.eval()
 
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -111,6 +51,7 @@ class GREEN:
             use_fast=True,
             trust_remote_code=True,
             padding_side="left",
+            device=self.device,
         )
 
         chat_template = "{% for message in messages %}\n{% if message['from'] == 'human' %}\n{{ '<|user|>\n' + message['value'] + eos_token }}\n{% elif message['from'] == 'system' %}\n{{ '<|system|>\n' + message['value'] + eos_token }}\n{% elif message['from'] == 'gpt' %}\n{{ '<|assistant|>\n'  + message['value'] + eos_token }}\n{% endif %}\n{% if loop.last and add_generation_prompt %}\n{{ '<|assistant|>' }}\n{% endif %}\n{% endfor %}"
@@ -118,83 +59,11 @@ class GREEN:
         self.tokenizer.chat_template = chat_template
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.clean_up_tokenization_spaces = True
-        self.tokenizer.padding_side = "left"
+        assert self.tokenizer.padding_side == "left"
 
-    def __call__(self, refs, hyps):
-        print("Processing data...making prompts")
-        dataset = Dataset.from_dict({"reference": refs, "prediction": hyps})
-
-        dataset = self.process_data(dataset)
-        print("Done.")
-
-        self.dataset = dataset
-
-        t = time.time()
-
-        mean, std, green_scores, summary, results_df = self.infer()
-
-        t = time.time() - t
-        print("Seconds per example: ", t / len(refs))
-
-        if not is_main_process():
-            print(f"Rank {dist.get_rank()} exiting.")
-            dist.destroy_process_group()
-            sys.exit()
-
-        return mean, std, green_scores, summary, results_df
-
-    def process_data(self, dataset):
-        def prompting(examples):
-            return {
-                "prompt": [
-                    make_prompt(r, p)
-                    for r, p in zip(examples["reference"], examples["prediction"])
-                ]
-            }
-
-        dataset = dataset.map(prompting, batched=True)
-        return dataset
-
-    @torch.inference_mode()
-    def infer(self):
-        if torch.cuda.is_available() and torch.cuda.device_count() > 1 and not self.cpu:
-            dataset_dist = split_dataset_by_node(
-                self.dataset,
-                rank=get_rank(),
-                world_size=int(os.environ["WORLD_SIZE"]),
-            )
-            print("Distributed dataset created on rank: ", int(os.environ["RANK"]))
-        else:
-            dataset_dist = self.dataset
-
-        local_completions = []
-        local_references = []
-
-        for batch in tqdm_on_main(
-            iterable=dataset_dist.iter(batch_size=self.batch_size),
-            total=len(dataset_dist) // self.batch_size,
-        ):
-            local_references.extend(batch["prompt"])
-            local_completions.extend(self.get_response(batch))
-
-        if torch.cuda.is_available() and torch.cuda.device_count() > 1 and not self.cpu:
-            self.completions, self.prompts = gather_processes(
-                local_completions, local_references
-            )
-        else:
-            self.completions = local_completions
-            self.prompts = local_references
-
-        if is_main_process():
-            print("==== End Inference ====")
-
-        if len(self.completions) != len(self.prompts):
-            print("Length of prompts and completions are not equal!")
-
-        return self.process_results()
+        self.is_distributed = torch.cuda.is_available() and torch.cuda.device_count() > 1
 
     def tokenize_batch_as_chat(self, batch):
-        local_rank = int(os.environ.get("LOCAL_RANK", 0)) if not self.cpu else "cpu"
         batch = [
             self.tokenizer.apply_chat_template(
                 i, tokenize=False, add_generation_prompt=True
@@ -207,11 +76,12 @@ class GREEN:
             return_tensors="pt",
             padding=True,
             truncation=True,
-            max_length=self.max_length,
-        ).to(local_rank)
+            max_length=2048,
+        ).to(self.device)
 
         return batch
 
+    @torch.inference_mode()
     def get_response(self, batch):
         assert "prompt" in batch.keys(), "prompt is not in batch keys"
 
@@ -246,6 +116,158 @@ class GREEN:
 
         return response_list
 
+class OpenAILLM(LLM):
+    def __init__(self):
+        super().__init__(config["openai_server"]["model_name"])
+        base_url = config["openai_server"]["base_url"]
+        if not base_url:
+            base_url = None
+        self.client = OpenAI(
+            base_url=base_url,
+            api_key=config["openai_server"]["api_key"],
+        )
+
+    def get_response(self, batch):
+        responses = []
+        for prompt in batch["prompt"]:
+            response = self.client.chat.completions.create(model=self.model_name, messages= [{"role": "user", "content": prompt}, {"role": "assistant", "content": ""}]).choices[0].message.content
+            responses.append(response)
+
+        response_list = []
+        if isinstance(responses, list):
+            for response in responses:
+                response = clean_responses(response)
+                response_list.append(response)
+        else:
+            responses = clean_responses(responses)
+            response_list.append(responses)
+        
+        return response_list
+
+    def generate_batch_file(self, prompts, file_name):
+        for i, prompt in enumerate(tqdm(iterable=prompts, desc="Generating jsonl")):
+            request = {
+                "custom_id": f"green_{i}",
+                "method": "POST",
+                "url": "/v1/chat/completions",
+                "body": {
+                    "model": "gpt-3.5-turbo-0125",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 6000,
+                },
+            }
+            with open(file_name, "a") as f:
+                json.dump(request, f)
+                f.write("\n")
+    
+    def upload_batch_file(self, file_name) -> str:
+        return self.client.files.create(file=open(file_name, "rb"), purpose="batch").id
+
+    def run_batch(self, batch_file_id) -> str:
+        return self.client.batches.create(
+            input_file_id=batch_file_id,
+            endpoint="/v1/chat/completions",
+            completion_window="24h"
+        )
+
+    def probe_batch(self, batch_id):
+        batch_status = self.client.batches.retrieve(batch_id)
+        print(batch_status)
+        return batch_status.status
+
+    def fetch_batch_result(self, batch_id, output_path="output.jsonl"):
+        batch_status = self.client.batches.retrieve(batch_id)
+        if batch_status.status == "completed":
+            file_response = self.client.files.content(batch_status.output_file_id)
+            with open(output_path, "w") as f:
+                for line in file_response.content.splitlines():
+                    line = json.loads(line)
+                    f.write(line["response"]["body"]["choices"][0]["message"]["content"] + "\n")
+
+class GREEN:
+    def __init__(self, llm_model: LLM, compute_summary_stats=True):
+
+        warnings.filterwarnings(
+            "ignore", message="A decoder-only architecture is being used*"
+        )
+
+        self.model = llm_model
+
+        self.compute_summary_stats = compute_summary_stats
+
+        self.batch_size = 4
+        self.max_length = 2048
+
+        self.categories = [
+            "Clinically Significant Errors",
+            "Clinically Insignificant Errors",
+            "Matched Findings",
+        ]
+        self.sub_categories = [
+            "(a) False report of a finding in the candidate",
+            "(b) Missing a finding present in the reference",
+            "(c) Misidentification of a finding's anatomic location/position",
+            "(d) Misassessment of the severity of a finding",
+            "(e) Mentioning a comparison that isn't in the reference",
+            "(f) Omitting a comparison detailing a change from a prior study",
+        ]
+        self.prompts = None
+        self.completions = None
+        self.green_scores = None
+        self.error_counts = None
+
+    def __call__(self, refs, hyps):
+        dataset = self.process_data(refs, hyps)
+
+        self.dataset = dataset
+
+        t = time.time()
+
+        mean, std, green_scores, summary, results_df = self.infer()
+
+        t = time.time() - t
+        print("Seconds per example: ", t / len(refs))
+
+        return mean, std, green_scores, summary, results_df
+
+    def process_data(self, refs, hyps):
+        print("Processing data to generate prompts")
+        dataset = Dataset.from_dict({"reference": refs, "prediction": hyps})
+
+        def prompting(examples):
+            return {
+                "prompt": [
+                    make_prompt(r, p)
+                    for r, p in zip(examples["reference"], examples["prediction"])
+                ]
+            }
+
+        dataset = dataset.map(prompting, batched=True)
+        return dataset
+
+    @torch.inference_mode()
+    def infer(self):
+        local_completions = []
+        local_references = []
+
+        print("==== Beginning Inference ====")
+        for batch in tqdm(
+            iterable=self.dataset.iter(batch_size=self.batch_size),
+            total=len(self.dataset) // self.batch_size,
+        ):
+            local_references.extend(batch["prompt"])
+            local_completions.extend(self.model.get_response(batch))
+
+        self.completions = local_completions
+        self.prompts = local_references
+
+        print("==== End Inference ====")
+
+        if len(self.completions) != len(self.prompts):
+            print("Length of prompts and completions are not equal!")
+
+        return self.process_results()
+
     def process_results(self):
         self.green_scores = [
             self.compute_green(response) for response in self.completions
@@ -264,8 +286,10 @@ class GREEN:
                 **self.error_counts,
             }
         )
+        mean, std, summary = None, None, None
 
-        mean, std, summary = self.compute_summary()
+        if self.compute_summary_stats:
+            mean, std, summary = self.compute_summary()
 
         return mean, std, self.green_scores, summary, results_df
 
@@ -413,7 +437,7 @@ class GREEN:
         mean = np.mean(self.green_scores)
         std = np.std(self.green_scores)
 
-        summary = f"\n-------------{self.model_name}----------------\n [Summary]: Green average {mean} and standard deviation {std} \n [Clinically Significant Errors Analyses]: <accuracy>. <representative error>\n\n"
+        summary = f"\n-------------{self.model.model_name}----------------\n [Summary]: Green average {mean} and standard deviation {std} \n [Clinically Significant Errors Analyses]: <accuracy>. <representative error>\n\n"
         for idx, sub_category in enumerate(self.sub_categories):
             accuracy = accuracies[sub_category]
             sentences = representative_sentences[sub_category]
@@ -421,28 +445,3 @@ class GREEN:
         summary += "----------------------------------\n"
 
         return mean, std, summary
-
-
-if __name__ == "__main__":
-    refs = [
-        "Interstitial opacities without changes.",
-        "Interval development of segmental heterogeneous airspace opacities throughout the lungs . No significant pneumothorax or pleural effusion . Bilateral calcified pleural plaques are scattered throughout the lungs . The heart is not significantly enlarged .",
-        "Lung volumes are low, causing bronchovascular crowding. The cardiomediastinal silhouette is unremarkable. No focal consolidation, pleural effusion, or pneumothorax detected. Within the limitations of chest radiography, osseous structures are unremarkable.",
-    ]
-    hyps = [
-        "Interstitial opacities at bases without changes.",
-        "Interval development of segmental heterogeneous airspace opacities throughout the lungs . No significant pneumothorax or pleural effusion . Bilateral calcified pleural plaques are scattered throughout the lungs . The heart is not significantly enlarged .",
-        "Endotracheal and nasogastric tubes have been removed. Changes of median sternotomy, with continued leftward displacement of the fourth inferiomost sternal wire. There is continued moderate-to-severe enlargement of the cardiac silhouette. Pulmonary aeration is slightly improved, with residual left lower lobe atelectasis. Stable central venous congestion and interstitial pulmonary edema. Small bilateral pleural effusions are unchanged.",
-    ]
-
-    model_name = "StanfordAIMI/GREEN-radllama2-7b"
-
-    green_scorer = GREEN(model_name, output_dir=".")
-    mean, std, green_score_list, summary, result_df = green_scorer(refs, hyps)
-    print(green_score_list)
-    print(summary)
-    # for index, row in result_df.iterrows():
-    #     print(f"Row {index}:\n")
-    #     for col_name in result_df.columns:
-    #         print(f"{col_name}: {row[col_name]}\n")
-    #     print('-' * 80)

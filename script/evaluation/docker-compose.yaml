@@ -1,0 +1,17 @@
+services:
+  green-scorer:
+    build:
+        context: .
+        dockerfile: Dockerfile.green-scorer
+          # image: vllm/vllm-openai:latest
+    runtime: nvidia
+    command: ["--model", "StanfordAIMI/GREEN-radllama2-7b", "--tensor-parallel-size", "1", "--gpu_memory_utilization", "0.90", "--host", "0.0.0.0", "--port", "8000", "--trust-remote-code"]
+    ports:
+      - "8003:8000"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=3
+      - HF_ENDPOINT=https://hf-mirror.com
+    restart: unless-stopped
+    volumes:
+      - /mnt1/huanan/hf_home/:/root/.cache/huggingface
+    shm_size: 10gb

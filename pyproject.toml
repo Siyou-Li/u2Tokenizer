@@ -3,10 +3,30 @@ name = "u2tokenizer"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     "backoff>=2.2.1",
     "openai>=1.86.0",
     "pandas>=2.3.0",
     "transformers>=4.52.4",
 ]
+
+[dependency-groups]
+eval = [
+    "accelerate>=1.12.0",
+    "bert-score>=0.3.13",
+    "datasets>=4.5.0",
+    "einops>=0.8.2",
+    "monai==1.3.0",
+    "nibabel>=5.3.3",
+    "nltk>=3.9.2",
+    "protobuf>=6.33.5",
+    "rouge-score>=0.1.2",
+    "scikit-learn>=1.8.0",
+    "sentence-transformers>=5.2.2",
+    "sentencepiece>=0.2.1",
+    "torch>=2.10.0",
+]
+
+[tool.uv]
+no-build-isolation-package = ["gptqmodel"]
