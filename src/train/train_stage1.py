@@ -281,8 +281,10 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer,
         del state_dict
         trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
     
-    # save tokenizer
-    trainer.tokenizer.save_pretrained(output_dir)
+    # save tokenizer (transformers ≥4.46 renamed `tokenizer` → `processing_class`)
+    tok = getattr(trainer, "tokenizer", None) or getattr(trainer, "processing_class", None)
+    if tok is not None:
+        tok.save_pretrained(output_dir)
 
 def find_all_linear_names(model):
     cls = torch.nn.Linear

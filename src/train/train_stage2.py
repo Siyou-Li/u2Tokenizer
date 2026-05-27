@@ -2,7 +2,7 @@ import os
 from typing import Any, Optional, Union
 import torch
 import numpy as np
-from train.dpo_u2trainer import u2DPOTrainer
+from src.train.dpo_u2trainer import u2DPOTrainer
 from trl.trainer.utils import pad
 from trl.trainer.dpo_config import DPOConfig
 from dataclasses import dataclass, field

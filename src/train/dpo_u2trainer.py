@@ -182,7 +182,7 @@ class u2DPOTrainer(DPOTrainer):
 
         return output
     
-    def concatenated_forward(self, model: nn.Module, batch: dict[str, Union[list, torch.LongTensor]]):
+    def concatenated_forward(self, model: nn.Module, batch: dict[str, Union[list, torch.LongTensor]], is_ref_model: bool = False):
         """Run the given model on the given batch of inputs, concatenating the chosen and rejected inputs together.
 
         We do this to avoid doing two forward passes, because it's faster for FSDP.
@@ -370,7 +370,7 @@ class u2DPOTrainer(DPOTrainer):
         logger.info("Trainer.model is not a `PreTrainedModel`, only saving its state dict.")
         torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
 
-        if self.args.lora_enable:
+        if getattr(self.args, "lora_enable", False):
             state_dict_with_lora = self.model.state_dict()
             torch.save(state_dict_with_lora, os.path.join(self.args.output_dir, 'model_with_lora.bin'))
             
