@@ -31,19 +31,20 @@ export SAVE_STEPS=${SAVE_STEPS:-2000}
 export EVAL_STEPS=${EVAL_STEPS:-0.95}
 
 export WANDB_MODE=${WANDB_MODE:-offline}
+export DEEPSPEED_CONFIG=${DEEPSPEED_CONFIG:-}        # e.g. config/ds_config_zero2_bf16.json
+export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
 
 # Master port — derive from job id to avoid collisions when running multiple
 # trainings concurrently.
 export MASTER_PORT=$((29500 + SLURM_JOB_ID % 1000))
 
 NUM_GPUS=$(echo "$SLURM_GPUS_ON_NODE" | awk '{print ($0=="")?1:$0}')
-echo "[sft] GPUs=$NUM_GPUS MODEL=$MODEL_NAME"
+echo "[sft] GPUs=$NUM_GPUS MODEL=$MODEL_NAME DEEPSPEED=${DEEPSPEED_CONFIG:-<none>}"
 
-accelerate launch \
-    --num_processes "$NUM_GPUS" \
-    --num_machines 1 \
-    --mixed_precision bf16 \
-    --main_process_port "$MASTER_PORT" \
+ARGS=(--num_processes "$NUM_GPUS" --num_machines 1
+      --mixed_precision bf16 --main_process_port "$MASTER_PORT")
+
+accelerate launch "${ARGS[@]}" \
     src/train/train_stage1.py \
     --version v0 \
     --model_name_or_path "$MODEL_NAME" \
@@ -88,4 +89,5 @@ accelerate launch \
     --enable_u2tokenizer True \
     --attn_type rope \
     --enable_diffts True \
-    --enable_dmtp True
+    --enable_dmtp True \
+    ${DEEPSPEED_CONFIG:+--deepspeed "$DEEPSPEED_CONFIG"}
