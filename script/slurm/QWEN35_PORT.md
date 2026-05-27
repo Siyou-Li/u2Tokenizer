@@ -65,6 +65,18 @@ re-baseline of the Qwen3-1.7B pipeline post-transformers-5 upgrade.
   - Infrastructure validated end-to-end. Real training will need
     either fp16+loss_scale, lower lr, or a longer warmup before being
     production-ready.
+- **Follow-up: Qwen3-8B numerical instability on real data (deferred)**.
+  Tried bf16+ZeRO-2 (step 2 grad_norm NaN), fp16+ZeRO-2 (loss scale
+  decayed to minimum), and bf16 with `lr=1e-9` (still NaN at step 2).
+  Step 1 always succeeds (loss ≈2.35, grad_norm ≈30); the corruption
+  happens between step 1 backward and step 2 forward, independent of
+  lr — so it is *not* an optimizer-step magnitude problem. Likely the
+  bf16↔fp32 cast in DeepSpeed's parameter all-gather is producing NaN
+  for some parameter near zero. Needs a per-parameter NaN-source
+  bisect (or switch to a non-DeepSpeed memory-saving strategy: FSDP,
+  ZeRO-3 with the Rearrange-init workaround, or activation
+  recomputation tuned per-layer). Current full-SFT run reverts to
+  Qwen3-1.7B (proven path).
 - `src/model/language_model/u2qwen35.py` + lazy import in
   `__init__.py` — codebase still loads on transformers 4.54, but the
   Qwen3.5 surface is reserved so a future port doesn't have to rename

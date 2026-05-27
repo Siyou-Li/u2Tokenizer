@@ -29,6 +29,8 @@ export LR=${LR:-4e-6}
 export MAX_LEN=${MAX_LEN:-1024}
 export SAVE_STEPS=${SAVE_STEPS:-2000}
 export EVAL_STEPS=${EVAL_STEPS:-0.95}
+export GRAD_CKPT=${GRAD_CKPT:-True}    # set False for >2B + bf16 stability
+export PRECISION=${PRECISION:-bf16}    # bf16 | fp16
 
 export WANDB_MODE=${WANDB_MODE:-offline}
 export DEEPSPEED_CONFIG=${DEEPSPEED_CONFIG:-}        # e.g. config/ds_config_zero2_bf16.json
@@ -42,7 +44,12 @@ NUM_GPUS=$(echo "$SLURM_GPUS_ON_NODE" | awk '{print ($0=="")?1:$0}')
 echo "[sft] GPUs=$NUM_GPUS MODEL=$MODEL_NAME DEEPSPEED=${DEEPSPEED_CONFIG:-<none>}"
 
 ARGS=(--num_processes "$NUM_GPUS" --num_machines 1
-      --mixed_precision bf16 --main_process_port "$MASTER_PORT")
+      --mixed_precision "$PRECISION" --main_process_port "$MASTER_PORT")
+if [ "$PRECISION" = "fp16" ]; then
+    PREC_FLAGS=(--fp16 True --bf16 False)
+else
+    PREC_FLAGS=(--bf16 True)
+fi
 
 accelerate launch "${ARGS[@]}" \
     src/train/train_stage1.py \
@@ -53,7 +60,7 @@ accelerate launch "${ARGS[@]}" \
     --vision_tower vit3d \
     --pretrain_vision_model "$VIT_BIN" \
     --tune_mm_mlp_adapter False \
-    --bf16 True \
+    "${PREC_FLAGS[@]}" \
     --train_base_path "$PROJECT_DATA" \
     --train_jsonl_path "$TRAIN_JSONL" \
     --val_base_path "$PROJECT_DATA" \
@@ -75,7 +82,7 @@ accelerate launch "${ARGS[@]}" \
     --warmup_ratio 0.1 \
     --lr_scheduler_type cosine \
     --logging_steps 0.001 \
-    --gradient_checkpointing True \
+    --gradient_checkpointing "$GRAD_CKPT" \
     --gradient_checkpointing_kwargs '{"use_reentrant": false}' \
     --ddp_find_unused_parameters True \
     --dataloader_pin_memory True \
