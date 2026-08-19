@@ -64,7 +64,9 @@ default_csv_file = os.path.dirname(__file__) + "/valid_labels.csv"
 
 TARGET_IMAGE_SIZE = 256
 PADDING_SIZE = 256  # 32 * 8
-MAX_NEW_TOKENS = 768
+# -Thinking checkpoints spend a large share of the budget on the <think> block
+# before the report, so leave generous headroom.
+MAX_NEW_TOKENS = 2048
 DEFAULT_PROMPT = "Can you provide a caption consists of findings and expressions for this medical image?"
 
 METRIC_CHOICES = ["bleu", "rouge", "bert", "meteor", "green", "all"]
@@ -282,7 +284,17 @@ def generate_caption(
                 repetition_penalty=1.1,
             )
 
-        return tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
+        text = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
+
+        # -Thinking checkpoints emit "<think>\n{reasoning}\n</think>\n\n{report}";
+        # only the report section must be scored. If the think block never
+        # closed, the report was never generated - treat it as a failure.
+        if "</think>" in text:
+            text = text.split("</think>", 1)[1].strip()
+        elif "<think>" in text:
+            print(f"Unclosed <think> block for {image_path}, no report generated")
+            return None
+        return text
     except Exception as e:
         print(f"Error generating caption for {image_path}: {str(e)}")
         return None
