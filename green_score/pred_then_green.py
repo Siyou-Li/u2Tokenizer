@@ -35,8 +35,8 @@ import torch
 from torch.utils.data import DataLoader, Subset
 import json
 from tqdm import tqdm
-from green_refactored.lu2_model import Lu2Model
-from green_refactored.green import GREEN, GREENLLM
+from green_score.lu2_model import Lu2Model
+from green_score.green import GREEN, GREENLLM
 from src.dataset.fused_dataset import FusedDataset
 
 

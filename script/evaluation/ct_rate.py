@@ -64,7 +64,9 @@ default_csv_file = os.path.dirname(__file__) + "/valid_labels.csv"
 
 TARGET_IMAGE_SIZE = 256
 PADDING_SIZE = 256  # 32 * 8
-MAX_NEW_TOKENS = 768
+# -Thinking checkpoints spend a large share of the budget on the <think> block
+# before the report, so leave generous headroom.
+MAX_NEW_TOKENS = 2048
 DEFAULT_PROMPT = "Can you provide a caption consists of findings and expressions for this medical image?"
 
 METRIC_CHOICES = ["bleu", "rouge", "bert", "meteor", "green", "all"]
@@ -268,6 +270,10 @@ def generate_caption(
             DEFAULT_PROMPT, add_special_tokens=False, return_tensors="pt"
         )["input_ids"].to(device)
 
+        # Decoding parameters are inherited from the checkpoint's
+        # generation_config.json (the released checkpoints ship do_sample=True,
+        # temperature=0.7, top_p=0.8, top_k=20), so scores vary slightly
+        # between runs.
         with torch.no_grad():
             output_ids = model.generate(
                 images=image_pt,
@@ -282,7 +288,20 @@ def generate_caption(
                 repetition_penalty=1.1,
             )
 
-        return tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
+        text = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
+
+        # -Thinking checkpoints emit "<think>\n{reasoning}\n</think>\n\n{report}";
+        # only the report section must be scored. Split on the LAST closing tag
+        # (matching the reference parser in the README quickstart, which rindexes
+        # the </think> token id) so a stray quoted tag inside the reasoning does
+        # not leak reasoning text into the scored report. If the think block
+        # never closed, the report was never generated - treat it as a failure.
+        if "</think>" in text:
+            text = text.rsplit("</think>", 1)[1].strip()
+        elif "<think>" in text:
+            print(f"Unclosed <think> block for {image_path}, no report generated")
+            return None
+        return text
     except Exception as e:
         print(f"Error generating caption for {image_path}: {str(e)}")
         return None
@@ -688,8 +707,19 @@ def save_results(
                     f.write(f"  {error_type}: {count}\n")
             f.write("-" * 80 + "\n")
 
+        evaluated_count = sum(1 for score in all_scores if "file" in score)
+        failed_count = sum(
+            len(score["failed_samples"])
+            for score in all_scores
+            if "worker_id" in score and "failed_samples" in score
+        )
+
         f.write("\n" + "=" * 80 + "\n")
         f.write("Average Scores:\n")
+        f.write(
+            f"(averaged over {evaluated_count} evaluated samples; "
+            f"{failed_count} failed samples excluded, see summary below)\n"
+        )
         f.write("=" * 80 + "\n")
         for metric, value in sorted(avg_scores.items()):
             f.write(f"{metric}: {value:.4f}\n")

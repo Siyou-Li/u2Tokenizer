@@ -131,6 +131,11 @@ class OpenAILLM(LLM):
         responses = []
         for prompt in batch["prompt"]:
             response = self.client.chat.completions.create(model=self.model_name, messages= [{"role": "user", "content": prompt}, {"role": "assistant", "content": ""}]).choices[0].message.content
+            # Reasoning judge models (e.g. the Qwen3 family) may inline a
+            # <think> block before the GREEN analysis; strip it so the error
+            # parsing below stays intact.
+            if response and "</think>" in response:
+                response = response.rsplit("</think>", 1)[1]
             responses.append(response)
 
         response_list = []

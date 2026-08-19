@@ -9,9 +9,9 @@ services:
     ports:
       - "8003:8000"
     environment:
-      - NVIDIA_VISIBLE_DEVICES=3
+      - NVIDIA_VISIBLE_DEVICES=0
       - HF_ENDPOINT=https://hf-mirror.com
     restart: unless-stopped
     volumes:
-      - /mnt1/huanan/hf_home/:/root/.cache/huggingface
+      - ${HOME}/.cache/huggingface/:/root/.cache/huggingface
     shm_size: 10gb
