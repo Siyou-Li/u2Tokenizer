@@ -278,6 +278,48 @@ The CT-RATE-Thinking dataset was generated from CT-RATE reports using the five-s
 Coming soon...
 
 
+## 📊 Evaluation
+
+The CT-RATE evaluation pipeline lives in `script/evaluation/ct_rate.py`. It generates a report for every `.nii.gz` volume in a directory and scores it against the reference findings in `script/evaluation/valid_labels.csv` with BLEU, ROUGE, BERTScore, METEOR and [GREEN](https://stanford-aimi.github.io/green.html).
+
+Each report is generated with the same fixed prompt used for the paper results ("Can you provide a caption consists of findings and expressions for this medical image?"), greedy decoding and `repetition_penalty=1.1`. For the `-Thinking` checkpoints the `<think>...</think>` block is stripped automatically and only the final report section is scored.
+
+### 1. Configure the GREEN judge
+
+GREEN needs an LLM judge, configured in `config/project.json` (copy from `config/project.json.template`):
+
+```json
+{
+    "openai_server": {
+        "model_name": "Qwen/Qwen3-235B-A22B",
+        "base_url": "https://api.siliconflow.cn/v1",
+        "api_key": "YOUR_API_KEY"
+    }
+}
+```
+
+Any OpenAI-compatible endpoint works. To run the judge locally instead, serve `StanfordAIMI/GREEN-radllama2-7b` with the provided vLLM compose file and point `base_url` at it:
+
+```bash
+cd script/evaluation
+docker compose up -d   # serves the GREEN judge on port 8003
+```
+
+Note that GREEN scores are only comparable across runs that use the same judge model.
+
+### 2. Run the evaluation
+
+```bash
+python script/evaluation/ct_rate.py \
+    --model_path AlpachinoNLP/u2Qwen3-4B-Thinking \
+    --data_dir /path/to/CT-RATE/dataset/valid/ \
+    --csv_path script/evaluation/valid_labels.csv \
+    --num_gpus 4 \
+    --log_file evaluation_results.txt
+```
+
+Useful flags: `--max_samples N` for a quick smoke test, `--metrics bleu rouge bert meteor` to skip the (expensive) GREEN metric. The output file contains per-sample generations and scores, the averaged metrics, GREEN error-type counts and a list of failed samples.
+
 ## 🧰 System Hardware requirements
 
 For training, stage 1 and 2 use a 4 * 80GB A100 GPU. For inference, a single 40GB A40 GPU is used. For loading model checkpoint, approximately 39GB of CPU memory is required.
