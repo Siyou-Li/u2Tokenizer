@@ -280,9 +280,9 @@ Coming soon...
 
 ## 📊 Evaluation
 
-The CT-RATE evaluation pipeline lives in `script/evaluation/ct_rate.py`. It generates a report for every `.nii.gz` volume in a directory and scores it against the reference findings in `script/evaluation/valid_labels.csv` with BLEU, ROUGE, BERTScore, METEOR and [GREEN](https://stanford-aimi.github.io/green.html).
+The CT-RATE evaluation pipeline lives in `script/evaluation/ct_rate.py`. It recursively scans a directory for the `.nii.gz` volumes listed in `script/evaluation/valid_labels.csv`, generates a report for each and scores it against the reference findings in `script/evaluation/valid_labels.csv` with BLEU, ROUGE, BERTScore, METEOR and [GREEN](https://stanford-aimi.github.io/green.html).
 
-Each report is generated with the same fixed prompt used for the paper results ("Can you provide a caption consists of findings and expressions for this medical image?"), greedy decoding and `repetition_penalty=1.1`. For the `-Thinking` checkpoints the `<think>...</think>` block is stripped automatically and only the final report section is scored.
+Each report is generated with the same fixed prompt used for the paper results ("Can you provide a caption consists of findings and expressions for this medical image?") and `repetition_penalty=1.1`. The remaining decoding parameters are inherited from each checkpoint's `generation_config.json` — the released checkpoints ship `do_sample: true`, `temperature: 0.7`, `top_p: 0.8`, `top_k: 20` — so scores vary slightly between runs. For the `-Thinking` checkpoints the `<think>...</think>` block is stripped automatically and only the final report section is scored; volumes that never close the think block are counted as failed samples and excluded from the averages (the output file reports both numbers).
 
 ### 1. Configure the GREEN judge
 
@@ -304,6 +304,20 @@ Any OpenAI-compatible endpoint works. To run the judge locally instead, serve `S
 cd script/evaluation
 docker compose up -d   # serves the GREEN judge on port 8003
 ```
+
+with `config/project.json` pointing at it:
+
+```json
+{
+    "openai_server": {
+        "model_name": "StanfordAIMI/GREEN-radllama2-7b",
+        "base_url": "http://localhost:8003/v1",
+        "api_key": "EMPTY"
+    }
+}
+```
+
+If the judge is a reasoning model (e.g. the Qwen3 family), any `<think>` block in its replies is stripped automatically before the GREEN analysis is parsed.
 
 Note that GREEN scores are only comparable across runs that use the same judge model.
 

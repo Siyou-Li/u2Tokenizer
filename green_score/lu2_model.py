@@ -63,4 +63,6 @@ class Lu2Model:
             generation = self.model.generate(image.to("cuda"), input_id, question_ids.to("cuda"), max_new_tokens=768,
                                                 do_sample=True, top_p=top_p, temperature=temperature)
 
+        # NOTE: legacy path - returns the raw decode including any <think>
+        # block; script/evaluation/ct_rate.py is the maintained eval entry.
         return self.tokenizer.batch_decode(generation, skip_special_tokens=True)[0]
