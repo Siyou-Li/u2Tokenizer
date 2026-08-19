@@ -13,5 +13,5 @@ services:
       - HF_ENDPOINT=https://hf-mirror.com
     restart: unless-stopped
     volumes:
-      - /mnt1/huanan/hf_home/:/root/.cache/huggingface
+      - ~/.cache/huggingface/:/root/.cache/huggingface
     shm_size: 10gb
