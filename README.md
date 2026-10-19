@@ -339,6 +339,8 @@ python script/evaluation/ct_rate.py \
 
 Useful flags: `--max_samples N` for a quick smoke test, `--metrics bleu rouge bert meteor` to skip the (expensive) GREEN metric. The output file contains per-sample generations and scores, the averaged metrics, GREEN error-type counts and a list of failed samples.
 
+Unit tests for the GREEN judge request and response parsing need no GPU, weights or network: `python -m unittest discover tests`.
+
 ## 🧰 System Hardware requirements
 
 For training, stage 1 and 2 use a 4 * 80GB A100 GPU. For inference, a single 40GB A40 GPU is used. For loading model checkpoint, approximately 39GB of CPU memory is required.
