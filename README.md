@@ -312,10 +312,15 @@ with `config/project.json` pointing at it:
     "openai_server": {
         "model_name": "StanfordAIMI/GREEN-radllama2-7b",
         "base_url": "http://localhost:8003/v1",
-        "api_key": "EMPTY"
+        "api_key": "EMPTY",
+        "tokenizer": "StanfordAIMI/GREEN-radllama2-7b"
     }
 }
 ```
+
+When `model_name` refers to a GREEN judge, the request is built client-side exactly as the reference `GREENLLM` implementation does: the GREEN chat template is applied locally, the prompt is tokenized with `add_eos_token=True` and truncated to 2048 tokens, and the token ids are sent to the `/v1/completions` endpoint with greedy decoding (`temperature=0`). The tokenizer is loaded from `tokenizer` (a Hub id or a local path) and defaults to `model_name`.
+
+> **Note:** earlier versions of `green_score.OpenAILLM` sent chat-completions requests to the GREEN judge. Its chat template reads `from`/`value` keys rather than `role`/`content`, so the rendered prompt was empty and the judge never saw either report. GREEN scores computed through the vLLM judge before this fix are invalid and should be recomputed.
 
 If the judge is a reasoning model (e.g. the Qwen3 family), any `<think>` block in its replies is stripped automatically before the GREEN analysis is parsed.
 

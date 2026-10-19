@@ -25,6 +25,12 @@ from transformers.utils import logging
 # Set the logging level for the transformers library to ERROR to suppress warnings that have been resolved
 logging.get_logger("transformers").setLevel(logging.ERROR)
 
+# Chat template the GREEN judge models were trained with. It reads message['from'] /
+# message['value'] rather than OpenAI-style role / content, so it has to be applied
+# client-side; a server-side chat template never sees those keys.
+GREEN_CHAT_TEMPLATE = "{% for message in messages %}\n{% if message['from'] == 'human' %}\n{{ '<|user|>\n' + message['value'] + eos_token }}\n{% elif message['from'] == 'system' %}\n{{ '<|system|>\n' + message['value'] + eos_token }}\n{% elif message['from'] == 'gpt' %}\n{{ '<|assistant|>\n'  + message['value'] + eos_token }}\n{% endif %}\n{% if loop.last and add_generation_prompt %}\n{{ '<|assistant|>' }}\n{% endif %}\n{% endfor %}"
+GREEN_MAX_LENGTH = 2048
+
 class LLM:
     def __init__(self, model_name):
         self.model_name = model_name
@@ -54,9 +60,7 @@ class GREENLLM(LLM):
             device=self.device,
         )
 
-        chat_template = "{% for message in messages %}\n{% if message['from'] == 'human' %}\n{{ '<|user|>\n' + message['value'] + eos_token }}\n{% elif message['from'] == 'system' %}\n{{ '<|system|>\n' + message['value'] + eos_token }}\n{% elif message['from'] == 'gpt' %}\n{{ '<|assistant|>\n'  + message['value'] + eos_token }}\n{% endif %}\n{% if loop.last and add_generation_prompt %}\n{{ '<|assistant|>' }}\n{% endif %}\n{% endfor %}"
-
-        self.tokenizer.chat_template = chat_template
+        self.tokenizer.chat_template = GREEN_CHAT_TEMPLATE
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.clean_up_tokenization_spaces = True
         assert self.tokenizer.padding_side == "left"
@@ -127,10 +131,43 @@ class OpenAILLM(LLM):
             api_key=config["openai_server"]["api_key"],
         )
 
+        # GREEN judges (e.g. StanfordAIMI/GREEN-radllama2-7b served by vLLM) only understand
+        # their own from/value chat template. A chat-completions request renders it as an empty
+        # prompt, so the judge never sees either report. Reproduce GREENLLM's inputs exactly
+        # instead (template, add_eos_token, truncation) and send the token ids to the
+        # completions endpoint with greedy decoding.
+        self.green_tokenizer = None
+        if "green" in self.model_name.lower():
+            self.green_tokenizer = AutoTokenizer.from_pretrained(
+                config["openai_server"].get("tokenizer", self.model_name),
+                add_eos_token=True,
+                use_fast=True,
+                trust_remote_code=True,
+                padding_side="left",
+            )
+            self.green_tokenizer.chat_template = GREEN_CHAT_TEMPLATE
+
+    def get_green_completion(self, prompt):
+        text = self.green_tokenizer.apply_chat_template(
+            [{"from": "human", "value": prompt}, {"from": "gpt", "value": ""}],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        input_ids = self.green_tokenizer(text, truncation=True, max_length=GREEN_MAX_LENGTH)["input_ids"]
+        return self.client.completions.create(
+            model=self.model_name,
+            prompt=input_ids,
+            max_tokens=max(1, GREEN_MAX_LENGTH - len(input_ids)),
+            temperature=0,
+        ).choices[0].text
+
     def get_response(self, batch):
         responses = []
         for prompt in batch["prompt"]:
-            response = self.client.chat.completions.create(model=self.model_name, messages= [{"role": "user", "content": prompt}, {"role": "assistant", "content": ""}]).choices[0].message.content
+            if self.green_tokenizer is not None:
+                response = self.get_green_completion(prompt)
+            else:
+                response = self.client.chat.completions.create(model=self.model_name, messages= [{"role": "user", "content": prompt}, {"role": "assistant", "content": ""}], temperature=0).choices[0].message.content
             # Reasoning judge models (e.g. the Qwen3 family) may inline a
             # <think> block before the GREEN analysis; strip it so the error
             # parsing below stays intact.
@@ -380,13 +417,16 @@ class GREEN:
 
         matches = sorted(re.findall(r"\([a-f]\) .*", category_text.group(1)))
 
+        # Judges occasionally number the sub-categories (1)-(6) instead of (a)-(f). Match them
+        # with a local list: overwriting self.sub_categories here made every later sample in
+        # the same process fail with a KeyError. Results are still stored under the original
+        # category names.
+        keys = self.sub_categories
         if len(matches) == 0:
             matches = sorted(re.findall(r"\([1-6]\) .*", category_text.group(1)))
-            self.sub_categories = [
-                f"({i})" + " " for i in range(1, len(self.sub_categories) + 1)
-            ]
+            keys = [f"({i})" + " " for i in range(1, len(self.sub_categories) + 1)]
 
-        for position, sub_category in enumerate(self.sub_categories):
+        for position, sub_category in enumerate(keys):
             for match in range(len(matches)):
                 if matches[match].startswith(sub_category):
                     sentences_list = (
